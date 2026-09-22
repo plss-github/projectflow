@@ -1,0 +1,48 @@
+name: Release GLPI Plugin
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+env:
+  PLUGIN_NAME: projectflow
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Definir versão da release
+        id: vars
+        run: |
+          VERSION=$(grep -oP "\S*'PLUGIN_\w*_VERSION'\,\s*'\K[^']+" setup.php)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Criar tar.gz do repositório (ignorando .github/.git)
+        run: |
+          TAR_PATH="/tmp/${{ env.PLUGIN_NAME }}.tar.gz"
+
+          tar -czf "$TAR_PATH" \
+            --exclude=.github \
+            --exclude=.git \
+            --exclude="${{ env.PLUGIN_NAME }}.tar.gz" \
+            .
+
+          mv "$TAR_PATH" "./${{ env.PLUGIN_NAME }}.tar.gz"
+
+      - name: Criar Release no GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.version }}
+          name: "${{ steps.vars.outputs.version }}"
+          files: |
+            ${{ env.PLUGIN_NAME }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

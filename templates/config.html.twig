@@ -1,0 +1,118 @@
+<div class="pf-app">
+  <section class="pf-hero pf-hero-dashboard">
+    <div>
+      <div class="pf-eyebrow">ADMINISTRAÇÃO</div>
+      <h1>Configurações do Project Flow</h1>
+      <p>Defina como o fluxo visual conversa com os projetos e tarefas nativos do GLPI.</p>
+    </div>
+  </section>
+
+  <form method="post">
+    <input type="hidden" name="_glpi_csrf_token" value="{{ csrf_token }}">
+
+    <div class="pf-config-grid">
+      <section class="pf-panel pf-config-card">
+        <div class="pf-panel-header">
+          <div><div class="pf-eyebrow">PORTFÓLIO</div><h2>Visualização</h2></div>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Limite no dashboard</label>
+            <input class="form-control" type="number" min="25" max="1000" name="dashboard_limit" value="{{ dashboard_limit }}">
+            <small class="text-muted">Controla quantos projetos são carregados de uma vez.</small>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Visualização padrão</label>
+            <select class="form-select" name="default_dashboard_view">
+              <option value="cards" {{ default_dashboard_view == 'cards' ? 'selected' : '' }}>Cards</option>
+              <option value="table" {{ default_dashboard_view == 'table' ? 'selected' : '' }}>Tabela</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Alerta de prazo</label>
+            <div class="input-group"><input class="form-control" type="number" min="1" max="60" name="health_due_soon_days" value="{{ health_due_soon_days }}"><span class="input-group-text">dias</span></div>
+            <small class="text-muted">Usado pela saúde automática do projeto.</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="pf-panel pf-config-card">
+        <div class="pf-panel-header"><div><div class="pf-eyebrow">PADRÕES</div><h2>Criação obrigatória</h2></div></div>
+        <div class="row g-3">
+          <div class="col-md-6"><label class="form-label">Estado inicial de projetos</label><select class="form-select" name="default_project_state_id" required>{% for state in states %}<option value="{{ state.id }}" {{ state.id == default_project_state_id ? 'selected' : '' }}>{{ state.name }}</option>{% endfor %}</select><small class="text-muted">Projetos nunca são criados sem estado.</small></div>
+          <div class="col-md-6"><label class="form-label">Estado inicial de tarefas</label><select class="form-select" name="default_task_state_id" required>{% for state in states %}<option value="{{ state.id }}" {{ state.id == default_task_state_id ? 'selected' : '' }}>{{ state.name }}</option>{% endfor %}</select><small class="text-muted">Toda tarefa nasce neste estado.</small></div>
+          <div class="col-md-6"><label class="form-label">Modo padrão de execução</label><select class="form-select" name="default_execution_mode"><option value="direct" {{ default_execution_mode == 'direct' ? 'selected' : '' }}>Tarefa direta no projeto</option><option value="ticket" {{ default_execution_mode == 'ticket' ? 'selected' : '' }}>Tarefa + chamado</option></select></div>
+          <div class="col-md-6"><label class="form-label">Controle padrão</label><select class="form-select" name="default_cost_mode"><option value="hours" {{ default_cost_mode == 'hours' ? 'selected' : '' }}>Horas</option><option value="money" {{ default_cost_mode == 'money' ? 'selected' : '' }}>Monetário + horas</option></select></div>
+        </div>
+      </section>
+
+      <section class="pf-panel pf-config-card">
+        <div class="pf-panel-header">
+          <div><div class="pf-eyebrow">AUTOMAÇÃO</div><h2>Comportamento operacional</h2></div>
+        </div>
+        <div class="pf-switch-list">
+          <label class="pf-switch-row">
+            <div><strong>Progresso automático pelo Kanban</strong><span>Ao mover uma tarefa para outra coluna, o percentual da tarefa passa a ser o percentual configurado para o estado.</span></div>
+            <input class="form-check-input" type="checkbox" name="auto_progress_on_kanban" value="1" {{ auto_progress_on_kanban ? 'checked' : '' }}>
+          </label>
+          <label class="pf-switch-row">
+            <div><strong>Sincronizar executor com a equipe do projeto</strong><span>Usuários, grupos, fornecedores ou contatos adicionados a uma tarefa entram automaticamente na equipe do projeto.</span></div>
+            <input class="form-check-input" type="checkbox" name="auto_add_task_member_to_project_team" value="1" {{ auto_add_task_member_to_project_team ? 'checked' : '' }}>
+          </label>
+          <label class="pf-switch-row">
+            <div><strong>Mostrar estados finalizados no Kanban</strong><span>Mantém as colunas de conclusão visíveis na central de execução.</span></div>
+            <input class="form-check-input" type="checkbox" name="show_finished_states" value="1" {{ show_finished_states ? 'checked' : '' }}>
+          </label>
+          <label class="pf-switch-row">
+            <div><strong>Cards compactos</strong><span>Reduz espaçamentos para ambientes com muitos projetos e tarefas.</span></div>
+            <input class="form-check-input" type="checkbox" name="compact_cards" value="1" {{ compact_cards ? 'checked' : '' }}>
+          </label>
+          <label class="pf-switch-row">
+            <div><strong>Lembretes por e-mail</strong><span>O cron do Project Flow enfileira e-mails de lembrete para os usuários responsáveis pelas tarefas.</span></div>
+            <input class="form-check-input" type="checkbox" name="reminder_email_enabled" value="1" {{ reminder_email_enabled ? 'checked' : '' }}>
+          </label>
+        </div>
+      </section>
+    </div>
+
+    <section class="pf-panel mt-3">
+      <div class="pf-panel-header">
+        <div>
+          <div class="pf-eyebrow">KANBAN</div>
+          <h2>Percentual por estado</h2>
+          <p class="mb-0">Este mapa é o motor da evolução automática da tarefa. O GLPI recalcula o projeto a partir das tarefas quando o progresso automático do projeto está habilitado.</p>
+        </div>
+      </div>
+      <div class="pf-state-progress-grid">
+        {% for state in states %}
+          <label class="pf-state-progress-card" style="--pf-state-color:{{ state.color }}">
+            <span class="pf-state-progress-name"><i></i><strong>{{ state.name }}</strong>{% if state.is_finished %}<small>Finalizado</small>{% endif %}</span>
+            <span class="pf-state-progress-control">
+              <input type="number" class="form-control" min="0" max="100" step="5" name="state_progress[{{ state.id }}]" value="{{ state.is_finished ? 100 : state.progress }}" {{ state.is_finished ? 'readonly' : '' }}>
+              <b>%</b>
+            </span>
+          </label>
+        {% else %}
+          <div class="pf-empty-inline">Cadastre estados de projeto/tarefa no GLPI para configurar o fluxo.</div>
+        {% endfor %}
+      </div>
+      <div class="pf-config-flow-example">
+        <span><b>Backlog</b><small>0%</small></span><i class="ti ti-arrow-right"></i>
+        <span><b>A fazer</b><small>10%</small></span><i class="ti ti-arrow-right"></i>
+        <span><b>Em andamento</b><small>50%</small></span><i class="ti ti-arrow-right"></i>
+        <span><b>Homologação</b><small>90%</small></span><i class="ti ti-arrow-right"></i>
+        <span><b>Concluído</b><small>100%</small></span>
+      </div>
+    </section>
+
+    <div class="pf-info-box mt-3">
+      <i class="ti ti-database-check"></i>
+      <div><strong>Dados operacionais continuam no GLPI</strong><p>Projetos, tarefas, equipes, chamados, documentos, contratos e planejamento continuam nativos do GLPI. O Project Flow adiciona apenas o que o módulo nativo não oferece de forma adequada: atividades operacionais, horas, reuniões, pontos de atenção, lembretes e snapshots de relatório semanal.</p></div>
+    </div>
+
+    <div class="pf-config-savebar">
+      <span>As alterações passam a valer nos próximos movimentos e operações do workspace.</span>
+      <button class="btn btn-primary" type="submit"><i class="ti ti-device-floppy"></i> Salvar configurações</button>
+    </div>
+  </form>
+</div>

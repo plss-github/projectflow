@@ -1,0 +1,62 @@
+<div class="pf-app pf-assistance-queue" id="projectflow-task-center">
+  <section class="pf-assistance-queue-header">
+    <div>
+      <div class="pf-breadcrumb-row"><span>Assistência</span><span>/</span><strong>Minhas tarefas</strong></div>
+      <h1>{{ scope == 'mine' ? 'Minhas tarefas' : 'Tarefas de projeto' }}</h1>
+      <p>{{ scope == 'mine' ? 'Tarefas de projeto atribuídas diretamente a você ou aos seus grupos.' : 'Tarefas de projeto que seu perfil pode visualizar.' }}</p>
+    </div>
+    <div class="pf-task-scope-tabs">
+      <a class="{{ scope == 'mine' ? 'is-active' : '' }}" href="{{ tasks_url }}?scope=mine{{ include_finished ? '&finished=1' : '' }}"><i class="ti ti-user-check"></i> Minhas tarefas</a>
+      <a class="{{ scope == 'all' ? 'is-active' : '' }}" href="{{ tasks_url }}?scope=all{{ include_finished ? '&finished=1' : '' }}"><i class="ti ti-list-details"></i> Todas visíveis</a>
+    </div>
+  </section>
+
+  <section class="pf-assistance-queue-stats">
+    <button class="is-selected" type="button" data-pf-task-quick="all"><span>{{ stats.total }}</span><small>Exibidas</small></button>
+    <button type="button" data-pf-task-quick="overdue"><span>{{ stats.overdue }}</span><small>Em atraso</small></button>
+    <button type="button" data-pf-task-quick="attention"><span>{{ stats.attention }}</span><small>Atenção</small></button>
+    <button type="button" data-pf-task-quick="today"><span>{{ stats.today }}</span><small>Vencem hoje</small></button>
+    <button type="button" data-pf-task-quick="next7"><span>{{ stats.next7 }}</span><small>Próx. 7 dias</small></button>
+  </section>
+
+  <section class="pf-panel pf-task-filterbar pf-assistance-filterbar">
+    <div class="pf-search"><i class="ti ti-search"></i><input id="pf-task-center-search" class="form-control" type="search" placeholder="Buscar ID, tarefa, projeto, solicitante ou executor..."></div>
+    <select id="pf-task-center-project" class="form-select"><option value="">Todos os projetos</option>{% for project in projects %}<option value="{{ project.id }}">{{ project.name }}{% if project.code %} · {{ project.code }}{% endif %}</option>{% endfor %}</select>
+    <select id="pf-task-center-state" class="form-select"><option value="">Todos os estados</option>{% for state in states %}<option value="{{ state.id }}">{{ state.name }}</option>{% endfor %}</select>
+    <select id="pf-task-center-priority" class="form-select"><option value="">Todas as prioridades</option>{% for p in priorities %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select>
+    <a class="btn btn-outline-secondary pf-icon-btn" title="{{ include_finished ? 'Ocultar concluídas' : 'Incluir concluídas' }}" href="{{ tasks_url }}?scope={{ scope }}{{ include_finished ? '' : '&finished=1' }}"><i class="ti ti-{{ include_finished ? 'eye-off' : 'history' }}"></i></a>
+  </section>
+
+  <section class="pf-panel pf-assistance-table-panel">
+    <div class="pf-assistance-table-caption"><strong><span id="pf-task-visible-count">{{ tasks|length }}</span> tarefa(s)</strong><span>Clique em uma tarefa para abrir a tela operacional.</span></div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle pf-task-ticket-table">
+        <thead><tr><th>ID</th><th>Tarefa</th><th>Projeto</th><th>Estado</th><th>Prioridade</th><th>Solicitado por</th><th>Executor(es)</th><th>Progresso</th><th>Prazo</th><th></th></tr></thead>
+        <tbody>
+        {% for task in tasks %}
+          {% set team_text = '' %}
+          {% for member in task.team_summary %}{% set team_text = team_text ~ (loop.first ? '' : ', ') ~ member.name %}{% endfor %}
+          <tr class="pf-task-ticket-row {{ task.attention ? 'has-attention' : '' }} {{ task.is_overdue ? 'is-overdue' : '' }}"
+              data-project="{{ task.projects_id }}" data-state="{{ task.state.id }}" data-priority="{{ task.priority }}"
+              data-overdue="{{ task.is_overdue ? '1' : '0' }}" data-attention="{{ task.attention ? '1' : '0' }}"
+              data-due="{{ task.plan_end_date ? task.plan_end_date|date('Y-m-d') : '' }}"
+              data-search="{{ ('#' ~ task.id ~ ' ' ~ task.name ~ ' ' ~ task.project_name ~ ' ' ~ task.project_code ~ ' ' ~ task.requester_name ~ ' ' ~ team_text ~ ' ' ~ task.state.name ~ ' ' ~ task.priority_name)|lower }}">
+            <td><a class="pf-task-id-link" href="{{ task.task_url }}">#{{ task.id }}</a></td>
+            <td><a class="pf-task-name-link" href="{{ task.task_url }}"><strong>{{ task.name }}</strong>{% if task.attention %}<span class="pf-mini-attention"><i class="ti ti-alert-triangle"></i> Atenção</span>{% endif %}<small>{{ task.type_name ?: 'Tarefa de projeto' }}</small></a></td>
+            <td><a class="pf-project-inline-link" href="{{ task.project_url }}">{{ task.project_name }}{% if task.project_code %}<small>{{ task.project_code }}</small>{% endif %}</a></td>
+            <td><span class="pf-state-badge" style="--pf-state-color:{{ task.state.color }}"><i></i>{{ task.state.name }}</span></td>
+            <td><span class="pf-priority-badge pf-priority-{{ task.priority }}"><i class="ti ti-flag"></i>{{ task.priority_name }}</span></td>
+            <td>{{ task.requester_name }}</td>
+            <td><div class="pf-task-assignees">{% for member in task.team_summary %}<span title="{{ member.name }}">{{ member.name|slice(0,1)|upper }}</span>{% else %}<small>Não definido</small>{% endfor %}</div></td>
+            <td><div class="pf-task-row-progress"><span><i style="width:{{ task.percent_done }}%"></i></span><strong>{{ task.percent_done }}%</strong></div></td>
+            <td class="{{ task.is_overdue ? 'pf-text-danger' : '' }}">{{ task.plan_end_date ? task.plan_end_date|date('d/m/Y H:i') : 'Sem prazo' }}</td>
+            <td><a class="btn btn-sm btn-ghost-secondary" href="{{ task.task_url }}" title="Abrir tarefa"><i class="ti ti-chevron-right"></i></a></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="10"><div class="pf-empty-state"><i class="ti ti-circle-check"></i><strong>Nenhuma tarefa encontrada</strong><p>Você não possui tarefas ativas com os filtros atuais.</p></div></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>

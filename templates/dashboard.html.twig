@@ -1,0 +1,118 @@
+<div class="pf-app {{ compact_cards ? 'pf-compact' : '' }}" id="projectflow-dashboard"
+     data-project-endpoint="{{ ajax_project_url }}" data-csrf="{{ csrf_token }}" data-default-view="{{ default_view }}">
+  <section class="pf-hero pf-hero-dashboard">
+    <div>
+      <div class="pf-eyebrow">PORTFÓLIO DE PROJETOS</div>
+      <h1>Project Flow</h1>
+      <p>Gestão visual e operacional sobre os projetos nativos do GLPI.</p>
+    </div>
+    <div class="pf-hero-actions">
+      <a class="btn btn-outline-secondary pf-btn" href="{{ tasks_url }}"><i class="ti ti-list-check"></i> Tarefas de Projeto</a>
+      <a class="btn btn-outline-secondary pf-btn" href="{{ templates_url }}"><i class="ti ti-template"></i> Templates</a>
+      {% if can_create_project %}
+        <button class="btn btn-primary pf-btn" type="button" data-bs-toggle="modal" data-bs-target="#pf-project-create-modal"><i class="ti ti-plus"></i> Novo projeto</button>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="pf-kpi-grid">
+    <button class="pf-kpi" type="button" data-pf-quick="all"><span class="pf-kpi-icon"><i class="ti ti-folders"></i></span><span><small>Visíveis</small><strong>{{ stats.total }}</strong></span></button>
+    <button class="pf-kpi" type="button" data-pf-quick="active"><span class="pf-kpi-icon"><i class="ti ti-progress"></i></span><span><small>Ativos</small><strong>{{ stats.active }}</strong></span></button>
+    <button class="pf-kpi pf-kpi-danger" type="button" data-pf-quick="overdue"><span class="pf-kpi-icon"><i class="ti ti-calendar-exclamation"></i></span><span><small>Em atraso</small><strong>{{ stats.overdue }}</strong></span></button>
+    <button class="pf-kpi pf-kpi-warning" type="button" data-pf-quick="attention"><span class="pf-kpi-icon"><i class="ti ti-heart-rate-monitor"></i></span><span><small>Em atenção</small><strong>{{ stats.attention }}</strong></span></button>
+    <button class="pf-kpi" type="button" data-pf-quick="favorites"><span class="pf-kpi-icon"><i class="ti ti-star"></i></span><span><small>Favoritos</small><strong>{{ stats.favorites }}</strong></span></button>
+    <a class="pf-kpi" href="{{ tasks_url }}"><span class="pf-kpi-icon"><i class="ti ti-list-check"></i></span><span><small>Minhas tarefas</small><strong>{{ stats.my_tasks }}</strong></span></a>
+  </section>
+
+  <section class="pf-filterbar pf-panel">
+    <div class="pf-search"><i class="ti ti-search"></i><input id="pf-project-search" class="form-control" type="search" placeholder="Buscar projeto, código, responsável, entidade, portfólio..."></div>
+    <select id="pf-project-state-filter" class="form-select pf-filter-select"><option value="">Todos os estados</option>{% for state in states %}<option value="{{ state.id }}">{{ state.name }}</option>{% endfor %}</select>
+    <select id="pf-project-health-filter" class="form-select pf-filter-select"><option value="">Toda saúde</option><option value="good">Saudável</option><option value="attention">Atenção</option><option value="critical">Crítico</option></select>
+    <select id="pf-project-portfolio-filter" class="form-select pf-filter-select"><option value="">Todos os portfólios</option>{% for portfolio in portfolios %}<option value="{{ portfolio|lower }}">{{ portfolio }}</option>{% endfor %}</select>
+    <button class="btn btn-outline-secondary pf-icon-btn" id="pf-clear-project-filters" title="Limpar filtros"><i class="ti ti-filter-off"></i></button>
+    <div class="pf-view-switch" role="group" aria-label="Visualização"><button type="button" data-view="cards" title="Cards"><i class="ti ti-layout-grid"></i></button><button type="button" data-view="table" title="Tabela"><i class="ti ti-table"></i></button></div>
+  </section>
+
+  <div class="pf-resultbar"><span><strong id="pf-visible-count">{{ projects|length }}</strong> projeto(s)</span><span id="pf-active-filter-label">Portfólio completo</span></div>
+
+  {% if projects is empty %}
+    <div class="pf-empty"><i class="ti ti-folder-off"></i><h3>Nenhum projeto disponível</h3><p>Não há projetos visíveis para seu perfil e entidades ativas.</p></div>
+  {% else %}
+    <section class="pf-project-grid" id="pf-project-grid">
+      {% for project in projects %}
+        <article class="pf-project-card" data-project-id="{{ project.id }}" data-state="{{ project.state.id }}" data-health="{{ project.health_effective }}" data-finished="{{ project.is_finished ? '1' : '0' }}" data-overdue="{{ project.is_overdue ? '1' : '0' }}" data-favorite="{{ project.is_favorite ? '1' : '0' }}" data-portfolio="{{ project.portfolio|lower }}" data-search="{{ (project.name ~ ' ' ~ project.code ~ ' ' ~ project.manager_name ~ ' ' ~ project.group_name ~ ' ' ~ project.entity_name ~ ' ' ~ project.portfolio ~ ' ' ~ project.sponsor)|lower }}">
+          <div class="pf-project-card-head">
+            <div class="pf-code-wrap"><span class="pf-project-code">{{ project.code ?: 'PROJ-' ~ project.id }}</span><span class="pf-health pf-health-{{ project.health_effective }}" title="Saúde do projeto"><i></i>{{ project.health_effective == 'good' ? 'Saudável' : (project.health_effective == 'attention' ? 'Atenção' : 'Crítico') }}</span></div>
+            <button type="button" class="pf-favorite {{ project.is_favorite ? 'is-active' : '' }}" data-project-id="{{ project.id }}" aria-label="Favoritar"><i class="ti ti-star{{ project.is_favorite ? '-filled' : '' }}"></i></button>
+          </div>
+          <a class="pf-card-main-link" href="{{ project.plugin_url }}">
+            <div class="pf-title-line"><h3>{{ project.name }}</h3><span class="pf-state-badge" style="--pf-state-color:{{ project.state.color }}"><i></i>{{ project.state.name }}</span></div>
+            <p class="pf-project-desc">{{ project.objective ?: (project.content ?: 'Sem objetivo ou descrição cadastrada.') }}</p>
+            <div class="pf-progress-label"><span>Progresso</span><strong>{{ project.percent_done }}%</strong></div>
+            <div class="progress pf-progress"><div class="progress-bar" style="width:{{ project.percent_done }}%"></div></div>
+            <div class="pf-project-signals">
+              <span class="pf-priority-badge pf-priority-{{ project.priority }}"><i class="ti ti-flag"></i>{{ project.priority_name }}</span>
+              <span><i class="ti ti-list-check"></i>{{ project.task_stats.completed }}/{{ project.task_stats.total }} tarefas</span>
+              {% if project.task_stats.overdue %}<span class="pf-text-danger"><i class="ti ti-alert-triangle"></i>{{ project.task_stats.overdue }} atrasada(s)</span>{% endif %}{% if project.task_stats.attention %}<span class="pf-text-warning"><i class="ti ti-alert-circle"></i>{{ project.task_stats.attention }} ponto(s) de atenção</span>{% endif %}
+              {% if project.portfolio %}<span><i class="ti ti-folders"></i>{{ project.portfolio }}</span>{% endif %}
+            </div>
+            <div class="pf-project-meta">
+              <span><i class="ti ti-user"></i>{{ project.manager_name }}</span>
+              <span><i class="ti ti-building"></i>{{ project.entity_name }}</span>
+              <span class="{{ project.is_overdue ? 'pf-text-danger' : '' }}"><i class="ti ti-calendar-due"></i>{{ project.plan_end_date ? project.plan_end_date|date('d/m/Y') : 'Sem prazo' }}</span>
+            </div>
+          </a>
+        </article>
+      {% endfor %}
+    </section>
+
+    <section class="pf-panel pf-table-view d-none" id="pf-project-table-view">
+      <div class="table-responsive"><table class="table pf-table align-middle"><thead><tr><th>Projeto</th><th>Estado</th><th>Saúde</th><th>Responsável</th><th>Portfólio</th><th>Progresso</th><th>Prazo</th><th></th></tr></thead><tbody>
+      {% for project in projects %}<tr data-pf-table-project="{{ project.id }}"><td><a href="{{ project.plugin_url }}"><strong>{{ project.name }}</strong><small>{{ project.code ?: 'PROJ-' ~ project.id }}</small></a></td><td><span class="pf-state-badge" style="--pf-state-color:{{ project.state.color }}"><i></i>{{ project.state.name }}</span></td><td><span class="pf-health pf-health-{{ project.health_effective }}"><i></i>{{ project.health_effective == 'good' ? 'Saudável' : (project.health_effective == 'attention' ? 'Atenção' : 'Crítico') }}</span></td><td>{{ project.manager_name }}</td><td>{{ project.portfolio ?: '—' }}</td><td><span class="pf-table-progress"><span style="width:{{ project.percent_done }}%"></span></span>{{ project.percent_done }}%</td><td class="{{ project.is_overdue ? 'pf-text-danger' : '' }}">{{ project.plan_end_date ? project.plan_end_date|date('d/m/Y') : '—' }}</td><td><a class="btn btn-sm btn-ghost-secondary" href="{{ project.plugin_url }}"><i class="ti ti-chevron-right"></i></a></td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+  {% endif %}
+
+  {% if can_create_project %}
+  <div class="modal fade" id="pf-project-create-modal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered"><div class="modal-content pf-modal-content">
+    <form id="pf-project-create-form">
+      <div class="modal-header"><div><div class="pf-eyebrow">NOVO PROJETO</div><h2 class="modal-title fs-4">Criar projeto</h2><p class="mb-0 text-muted">Crie do zero ou clone um template nativo do GLPI.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body"><input type="hidden" name="action" value="create"><input type="hidden" name="_glpi_csrf_token" value="{{ csrf_token }}">
+        <div class="pf-form-section"><h3>Identificação</h3><div class="row g-3">
+          <div class="col-lg-8"><label class="form-label">Nome *</label><input name="name" class="form-control" maxlength="255" required placeholder="Ex.: Implantação GLPI - Cliente XYZ"></div>
+          <div class="col-lg-4"><label class="form-label">Código</label><input name="code" class="form-control" maxlength="255" placeholder="PRJ-001"></div>
+          <div class="col-lg-4"><label class="form-label">Template</label><select name="template_id" class="form-select"><option value="0">Projeto em branco</option>{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select></div>
+          <div class="col-lg-4"><label class="form-label">Entidade</label><select name="entities_id" class="form-select">{% for entity in entities %}<option value="{{ entity.id }}">{{ entity.name }}</option>{% endfor %}</select></div>
+          <div class="col-lg-4"><label class="form-label">Tipo</label><select name="projecttypes_id" class="form-select"><option value="0">Não definido</option>{% for type in project_types %}<option value="{{ type.id }}">{{ type.name }}</option>{% endfor %}</select></div>
+          <div class="col-12"><label class="form-label">Objetivo / descrição executiva</label><textarea name="objective" class="form-control" rows="2" maxlength="4000" placeholder="O que este projeto pretende entregar e qual resultado é esperado?"></textarea></div>
+          <div class="col-12"><label class="form-label">Descrição operacional</label><textarea name="content" class="form-control" rows="3" maxlength="10000"></textarea></div>
+        </div></div>
+        <div class="pf-form-section"><h3>Planejamento e governança</h3><div class="row g-3">
+          <div class="col-md-3"><label class="form-label">Estado</label><select name="projectstates_id" class="form-select">{% for state in states %}<option value="{{ state.id }}" {{ state.id == default_project_state_id ? 'selected' : '' }}>{{ state.name }}</option>{% endfor %}</select></div>
+          <div class="col-md-3"><label class="form-label">Prioridade</label><select name="priority" class="form-select">{% for priority in priorities %}<option value="{{ priority.id }}" {{ priority.id == 3 ? 'selected' : '' }}>{{ priority.name }}</option>{% endfor %}</select></div>
+          <div class="col-md-3"><label class="form-label">Execução</label><select name="execution_mode" class="form-select"><option value="direct" {{ default_execution_mode == 'direct' ? 'selected' : '' }}>Tarefa direta</option><option value="ticket" {{ default_execution_mode == 'ticket' ? 'selected' : '' }}>Tarefa + chamado</option></select></div>
+          <div class="col-md-3"><label class="form-label">Responsável</label><select name="users_id" class="form-select"><option value="0">Não definido</option>{% for user in users %}<option value="{{ user.id }}">{{ user.name }}</option>{% endfor %}</select></div>
+          <div class="col-md-3"><label class="form-label">Grupo responsável</label><select name="groups_id" class="form-select"><option value="0">Não definido</option>{% for group in groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></div>
+          <div class="col-md-3"><label class="form-label">Início planejado</label><input type="datetime-local" name="plan_start_date" class="form-control"></div>
+          <div class="col-md-3"><label class="form-label">Prazo</label><input type="datetime-local" name="plan_end_date" class="form-control"></div>
+          <div class="col-md-3"><label class="form-label">Portfólio</label><input name="portfolio" class="form-control" maxlength="190" placeholder="Ex.: Segurança"></div>
+          <div class="col-md-3"><label class="form-label">Patrocinador</label><input name="sponsor" class="form-control" maxlength="190"></div>
+          <div class="col-md-3"><label class="form-label">Saúde</label><select name="health" class="form-select"><option value="auto">Automática</option><option value="good">Saudável</option><option value="attention">Atenção</option><option value="critical">Crítico</option></select></div>
+          <div class="col-md-3"><label class="form-label">Risco</label><select name="risk_level" class="form-select"><option value="low">Baixo</option><option value="normal" selected>Normal</option><option value="high">Alto</option><option value="critical">Crítico</option></select></div>
+          <div class="col-md-3 d-flex align-items-end"><label class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" name="auto_percent_done" value="1" checked><span class="form-check-label">Progresso automático</span></label></div>
+          <div class="col-md-3 d-flex align-items-end"><label class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" name="is_recursive" value="1"><span class="form-check-label">Visível em subentidades</span></label></div>
+        </div></div>
+        <div class="pf-form-section pf-accounting-section"><h3>Contabilização do projeto</h3><p class="text-muted mb-3">Defina como o esforço/custo principal deste projeto será acompanhado.</p>
+          <div class="pf-accounting-options">
+            <label class="pf-accounting-card"><input type="radio" name="cost_mode" value="hours" {{ default_cost_mode == 'hours' ? 'checked' : '' }}><span class="pf-accounting-icon"><i class="ti ti-clock-hour-4"></i></span><span><strong>Contabilizar horas</strong><small>Controle por horas de execução e reuniões, com previsto, consumido e saldo.</small></span></label>
+            <label class="pf-accounting-card"><input type="radio" name="cost_mode" value="money" {{ default_cost_mode == 'money' ? 'checked' : '' }}><span class="pf-accounting-icon"><i class="ti ti-currency-real"></i></span><span><strong>Custo financeiro</strong><small>Habilita lançamentos monetários do projeto para usuários com acesso gerencial.</small></span></label>
+          </div>
+          <div class="row g-3 mt-1 pf-hours-budget-wrap"><div class="col-md-4"><label class="form-label">Horas previstas / contratadas</label><input type="number" min="0" step="0.25" name="hours_budget_hours" class="form-control" placeholder="Ex.: 160"><small class="text-muted">Usado para calcular consumo e saldo quando o projeto é contabilizado por horas.</small></div></div>
+        </div>
+        <div class="pf-form-message" id="pf-project-create-message"></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-primary"><i class="ti ti-check"></i> Criar projeto</button></div>
+    </form>
+  </div></div></div>
+  {% endif %}
+</div>
