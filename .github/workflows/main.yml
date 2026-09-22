@@ -1,3 +1,4 @@
+# .github/workflows/release-plugin.yml
 name: Release GLPI Plugin
 
 on:
@@ -16,16 +17,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar código
+      - name: Baixar codigo
         uses: actions/checkout@v4
 
-      - name: Definir versão da release
+      - name: Definir versao da release
         id: vars
         run: |
           VERSION=$(grep -oP "\S*'PLUGIN_\w*_VERSION'\,\s*'\K[^']+" setup.php)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Criar tar.gz do repositório (ignorando .github/.git)
+      - name: Criar tar.gz do repositorio (ignorando .github/.git)
         run: |
           TAR_PATH="/tmp/${{ env.PLUGIN_NAME }}.tar.gz"
 
@@ -33,6 +34,7 @@ jobs:
             --exclude=.github \
             --exclude=.git \
             --exclude="${{ env.PLUGIN_NAME }}.tar.gz" \
+            --transform "s|^|${{ env.PLUGIN_NAME }}/|" \
             .
 
           mv "$TAR_PATH" "./${{ env.PLUGIN_NAME }}.tar.gz"
