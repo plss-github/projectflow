@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4.1 - 2026-09-22
+
+- Corrige carregamento de CSS e JavaScript no GLPI 11 quando o plugin está instalado via `marketplace/`.
+- Passa a gerar URLs internas pelo caminho canônico `/plugins/projectflow`, conforme o GLPI 11.
+- Mantém compatibilidade com URLs legadas `/marketplace/projectflow/` durante a transição.
+- Renomeia os assets da release para evitar cache de navegador/proxy após a atualização.
+
 ## 3.4.0
 
 ### Tela de tarefa reconstruída no padrão do formulário de Chamado do GLPI 11

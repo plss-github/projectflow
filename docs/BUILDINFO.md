@@ -1,7 +1,7 @@
 # Build information
 
 - Plugin: Project Flow
-- Version: 3.4.0
+- Version: 3.4.1
 - Build date: 2026-09-22
 - Target: GLPI 11.x / PHP 8.2+
 - Base package: Project Flow 3.2.0

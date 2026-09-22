@@ -9,12 +9,14 @@ if (!defined('GLPI_ROOT')) {
     die('Direct access not allowed');
 }
 
-define('PLUGIN_PROJECTFLOW_VERSION', '3.4.0');
+define('PLUGIN_PROJECTFLOW_VERSION', '3.4.1');
 define('PLUGIN_PROJECTFLOW_GLPI_MIN', '11.0.0');
 define('PLUGIN_PROJECTFLOW_GLPI_MAX', '11.0.99');
 
-define('PLUGIN_PROJECTFLOW_DIR', Plugin::getPhpDir('projectflow'));
-define('PLUGIN_PROJECTFLOW_WEBDIR', Plugin::getWebDir('projectflow'));
+define('PLUGIN_PROJECTFLOW_DIR', __DIR__);
+// GLPI 11 exposes plugin resources through the canonical /plugins/<key> URL,
+// regardless of whether the plugin is physically installed in plugins/ or marketplace/.
+define('PLUGIN_PROJECTFLOW_WEBDIR', ($GLOBALS['CFG_GLPI']['root_doc'] ?? '') . '/plugins/projectflow');
 
 function plugin_init_projectflow(): void
 {
@@ -48,10 +50,18 @@ function plugin_init_projectflow(): void
         $PLUGIN_HOOKS[Hooks::MENU_TOADD]['projectflow'] = $menus;
     }
 
-    $uri = $_SERVER['REQUEST_URI'] ?? '';
-    if (str_contains($uri, '/plugins/projectflow/')) {
-        $PLUGIN_HOOKS[Hooks::ADD_CSS]['projectflow'][] = 'css/projectflow-3.4.css';
-        $PLUGIN_HOOKS[Hooks::ADD_JAVASCRIPT]['projectflow'][] = 'js/projectflow-3.4.js';
+    $requestPath = (string) (parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '');
+    $canonicalPath = (string) (parse_url(PLUGIN_PROJECTFLOW_WEBDIR, PHP_URL_PATH) ?? PLUGIN_PROJECTFLOW_WEBDIR);
+
+    // GLPI 11 canonical URL is /plugins/projectflow/. Keep marketplace support so
+    // existing bookmarks/menu entries created before this release still load assets.
+    $isProjectflowPage = ($canonicalPath !== '' && str_starts_with($requestPath, rtrim($canonicalPath, '/') . '/'))
+        || str_contains($requestPath, '/plugins/projectflow/')
+        || str_contains($requestPath, '/marketplace/projectflow/');
+
+    if ($isProjectflowPage) {
+        $PLUGIN_HOOKS[Hooks::ADD_CSS]['projectflow'][] = 'css/projectflow-3.4.1.css';
+        $PLUGIN_HOOKS[Hooks::ADD_JAVASCRIPT]['projectflow'][] = 'js/projectflow-3.4.1.js';
     }
 
     if (Session::haveRight('config', UPDATE)) {
