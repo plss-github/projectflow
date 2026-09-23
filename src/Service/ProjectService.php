@@ -72,6 +72,76 @@ class ProjectService
         return $projects;
     }
 
+    /**
+     * Lightweight, uncapped index of visible projects (id => id/name/code/entity/modes).
+     * Used by operational queues, which must not inherit the portfolio display limit.
+     *
+     * @param int[]|null $onlyIds restrict to these project IDs; null = every visible project
+     */
+    public function getAccessibleProjectIndex(?array $onlyIds = null): array
+    {
+        global $DB;
+        if (!Project::canView()) return [];
+        if ($onlyIds !== null) {
+            $onlyIds = array_values(array_unique(array_filter(array_map('intval', $onlyIds))));
+            if ($onlyIds === []) return [];
+        }
+
+        $table = Project::getTable();
+        $visibility = Project::getVisibilityCriteria();
+        $criteria = [
+            'SELECT' => ["$table.*"],
+            'DISTINCT' => true,
+            'FROM' => $table,
+            'WHERE' => array_merge(["$table.is_deleted" => 0, "$table.is_template" => 0], getEntitiesRestrictCriteria($table, '', '', true)),
+        ];
+        if ($onlyIds !== null) $criteria['WHERE']["$table.id"] = $onlyIds;
+        if (!empty($visibility['LEFT JOIN'])) $criteria['LEFT JOIN'] = $visibility['LEFT JOIN'];
+        if (!empty($visibility['WHERE'])) $criteria['WHERE'] = array_merge($criteria['WHERE'], $visibility['WHERE']);
+
+        $index = [];
+        foreach ($DB->request($criteria) as $row) {
+            $project = new Project();
+            $project->getFromResultSet($row);
+            if (!$project->canViewItem()) continue;
+            $id = (int) $row['id'];
+            $index[$id] = [
+                'id' => $id,
+                'name' => (string) ($row['name'] ?? ''),
+                'code' => (string) ($row['code'] ?? ''),
+                'entity_id' => (int) ($row['entities_id'] ?? 0),
+                'execution_mode' => 'direct',
+                'cost_mode' => 'hours',
+            ];
+        }
+        foreach ($this->meta->getForProjects(array_keys($index)) as $id => $meta) {
+            if (!isset($index[$id])) continue;
+            $index[$id]['execution_mode'] = in_array(($meta['execution_mode'] ?? ''), ['direct', 'ticket'], true) ? $meta['execution_mode'] : 'direct';
+            $index[$id]['cost_mode'] = in_array(($meta['cost_mode'] ?? ''), ['hours', 'money'], true) ? $meta['cost_mode'] : 'hours';
+        }
+        return $index;
+    }
+
+    /**
+     * Minimal project context for task screens (no worklogs, history, documents, report...).
+     */
+    public function getProjectSummary(int $id): ?array
+    {
+        $project = new Project();
+        if (!$project->getFromDB($id) || !$project->canViewItem()) return null;
+        $meta = $this->meta->getForProject($id);
+        return [
+            'id' => $id,
+            'name' => (string) ($project->fields['name'] ?? ''),
+            'code' => (string) ($project->fields['code'] ?? ''),
+            'entity_id' => (int) ($project->fields['entities_id'] ?? 0),
+            'execution_mode' => (string) ($meta['execution_mode'] ?? 'direct'),
+            'cost_mode' => (string) ($meta['cost_mode'] ?? 'hours'),
+            'plugin_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/project.php?id=' . $id,
+            'can_update' => $project->can($id, UPDATE),
+        ];
+    }
+
     public function getProject(int $id): ?array
     {
         $project = new Project();
@@ -80,6 +150,8 @@ class ProjectService
         $taskStats = $this->getTaskStatsForProjects([$id])[$id] ?? [];
         $data = $this->normalizeProject($project->fields, $states, $this->meta->getForProject($id), isset($this->meta->getFavoriteIds()[$id]), $taskStats);
         $data['can_update'] = $project->can($id, UPDATE);
+        $data['is_template'] = !empty($project->fields['is_template']);
+        $data['template_name'] = (string) ($project->fields['template_name'] ?? '');
         $data['native_url'] = Project::getFormURLWithID($id);
         $data['team'] = $this->getTeam($id);
         $data['itil_items'] = $this->getItilItems($id);
@@ -105,11 +177,11 @@ class ProjectService
         $data['can_add_cost'] = $data['can_update'] && ($data['cost_mode'] ?? 'hours') === 'money' && $data['can_view_money'];
         $data['can_add_document'] = $data['can_update'] && Document::canCreate();
         $data['history'] = $this->getHistory($project);
-        $data['counts'] = $this->getRelatedCounts($id) + ['meetings'=>count($data['meetings'])];
+        $data['counts'] = $this->getRelatedCounts($id, (int) ($taskStats['total'] ?? 0)) + ['meetings'=>count($data['meetings'])];
         return $data;
     }
 
-    public function create(array $input): int|false
+    public function create(array $input, bool $asTemplate = false): int|false
     {
         if (!Session::haveRight(Project::$rightname, CREATE)) return false;
         $name = mb_substr(trim(strip_tags((string) ($input['name'] ?? ''))), 0, 255);
@@ -142,12 +214,22 @@ class ProjectService
         $stateMap = $this->references->getStateMap();
         $override['percent_done'] = ($stateId && ($stateMap[$stateId]['is_finished'] ?? false)) ? 100 : 0;
 
-        $templateId = (int) ($input['template_id'] ?? 0);
-        if ($templateId > 0) {
-            $template = new Project();
-            if (!$template->getFromDB($templateId) || empty($template->fields['is_template']) || !$template->canViewItem()) return false;
-            $projectId = $template->clone($override, true, false);
+        if ($asTemplate) {
+            $override['template_name'] = $name;
+        }
+
+        // Projects are created from a template; a template may also copy a regular project.
+        $sourceId = (int) ($input[$asTemplate ? 'source_project_id' : 'template_id'] ?? 0);
+        $sourceMeta = [];
+        if ($sourceId > 0) {
+            $source = new Project();
+            if (!$source->getFromDB($sourceId) || !$source->canViewItem()) return false;
+            if (!$asTemplate && empty($source->fields['is_template'])) return false;
+            $projectId = $source->clone($override, true, $asTemplate);
+            $sourceMeta = $this->meta->getForProject($sourceId);
+            unset($sourceMeta['id'], $sourceMeta['projects_id'], $sourceMeta['date_mod']);
         } else {
+            if ($asTemplate) $override['is_template'] = 1;
             $projectId = (new Project())->add($override);
         }
 
@@ -160,12 +242,26 @@ class ProjectService
         if ((int) ($override['groups_id'] ?? 0) > 0) {
             $this->ensureMember($projectId, Group::class, (int) $override['groups_id']);
         }
+        if (trim((string) ($input['hours_budget_hours'] ?? '')) === '' && !empty($sourceMeta['hours_budget_minutes'])) {
+            $input['hours_budget_hours'] = (string) (((int) $sourceMeta['hours_budget_minutes']) / 60);
+        }
         $this->meta->save($projectId, [
-            'execution_mode' => $input['execution_mode'] ?? Config::get('default_execution_mode','direct'),
-            'cost_mode' => $input['cost_mode'] ?? Config::get('default_cost_mode','hours'),
-        ] + $input);
+            'execution_mode' => $input['execution_mode'] ?? ($sourceMeta['execution_mode'] ?? Config::get('default_execution_mode','direct')),
+            'cost_mode' => $input['cost_mode'] ?? ($sourceMeta['cost_mode'] ?? Config::get('default_cost_mode','hours')),
+        ] + $input + $sourceMeta);
         $this->repairClonedTaskStates($projectId);
+        $this->createInitialTasks($projectId, (array) ($input['tasks'] ?? []));
         return (int) $projectId;
+    }
+
+    /**
+     * Create a native project template (Project with is_template = 1) with the same fields as a
+     * project. It can start empty or copy an existing project/template (tasks, team, relations),
+     * and may receive its first tasks in the same request (`tasks[]`).
+     */
+    public function createTemplate(array $input): int|false
+    {
+        return $this->create($input, true);
     }
 
     public function update(int $projectId, array $input): bool
@@ -387,12 +483,12 @@ class ProjectService
         return ['can_view' => true, 'items' => $items, 'total' => $total];
     }
 
-    public function getRelatedCounts(int $projectId): array
+    public function getRelatedCounts(int $projectId, ?int $knownTaskCount = null): array
     {
         $project = new Project();
         $canViewProject = $project->getFromDB($projectId) && $project->canViewItem();
         $canViewMoney = $canViewProject && $this->canViewMoney($project);
-        $visibleTaskCount = $canViewProject ? (int) (($this->getTaskStatsForProjects([$projectId])[$projectId]['total'] ?? 0)) : 0;
+        $visibleTaskCount = !$canViewProject ? 0 : ($knownTaskCount ?? (int) (($this->getTaskStatsForProjects([$projectId])[$projectId]['total'] ?? 0)));
         return [
             'tasks' => $visibleTaskCount,
             'itil' => countElementsInTable(Itil_Project::getTable(), ['projects_id' => $projectId]),
@@ -460,7 +556,8 @@ class ProjectService
         $health = $healthConfigured;
         if ($health === 'auto') {
             $days = \GlpiPlugin\Projectflow\Config::int('health_due_soon_days', 7);
-            if ($isOverdue || (($taskStats['overdue'] ?? 0) >= 3)) $health = 'critical';
+            if ($isFinished) $health = 'good';
+            elseif ($isOverdue || (($taskStats['overdue'] ?? 0) >= 3)) $health = 'critical';
             elseif (!$isFinished && (($taskStats['overdue'] ?? 0) > 0 || ($taskStats['attention'] ?? 0) > 0)) $health = 'attention';
             elseif (!$isFinished && $end && strtotime($end) <= strtotime('+' . max(1,$days) . ' days') && $percent < 80) $health = 'attention';
             else $health = 'good';
@@ -475,6 +572,30 @@ class ProjectService
             'is_overdue'=>$isOverdue,'date_mod'=>$row['date_mod']??null,'date_creation'=>$row['date_creation']??null,'plugin_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/project.php?id='.(int)$row['id'],
             'is_favorite'=>$favorite,'health_configured'=>$healthConfigured,'health_effective'=>$health,'risk_level'=>(string)($meta['risk_level']??'normal'),'portfolio'=>(string)($meta['portfolio']??''),'sponsor'=>(string)($meta['sponsor']??''),'objective'=>(string)($meta['objective']??''),'execution_mode'=>(string)($meta['execution_mode']??'direct'),'cost_mode'=>(string)($meta['cost_mode']??'hours'),'hours_budget_minutes'=>max(0,(int)($meta['hours_budget_minutes']??0)),'task_stats'=>$taskStats + ['total'=>0,'completed'=>0,'overdue'=>0,'milestones'=>0,'attention'=>0,'avg_progress'=>0],
         ];
+    }
+
+    /**
+     * Create the tasks typed in the creation form (`tasks[n][name|projecttasktypes_id|
+     * planned_duration_hours|assignee_user_id|is_milestone|content]`). Rows without a name are
+     * ignored; the order of the rows is kept.
+     */
+    private function createInitialTasks(int $projectId, array $rows): void
+    {
+        if ($rows === []) return;
+        $tasks = new TaskService();
+        $count = 0;
+        foreach ($rows as $row) {
+            if (!is_array($row) || trim((string) ($row['name'] ?? '')) === '') continue;
+            if (++$count > 200) break;
+            $tasks->create($projectId, [
+                'name' => (string) $row['name'],
+                'projecttasktypes_id' => (int) ($row['projecttasktypes_id'] ?? 0),
+                'planned_duration_hours' => (string) ($row['planned_duration_hours'] ?? '0'),
+                'assignee_user_id' => max(0, (int) ($row['assignee_user_id'] ?? 0)),
+                'is_milestone' => !empty($row['is_milestone']) ? 1 : 0,
+                'content' => (string) ($row['content'] ?? ''),
+            ]);
+        }
     }
 
     private function ensureMember(int $projectId, string $type, int $itemId): bool

@@ -18,12 +18,15 @@ class TaskController
         $task = $tasks->getTask($taskId);
         if ($task === null) return null;
 
-        $project = (new ProjectService())->getProject((int) $task['projects_id']);
+        // The task screen only needs the project context (name/link/entity): avoid loading the
+        // full project workspace (worklogs, history, documents, costs...) on every task open.
+        $project = (new ProjectService())->getProjectSummary((int) $task['projects_id']);
         if ($project === null) return null;
 
         $refs = new ReferenceService();
         $meetings = (new MeetingService())->getForTask($taskId);
-        $subtasks = $tasks->getDirectSubtasks($taskId);
+        $projectTasks = $tasks->getProjectTasks((int) $task['projects_id']);
+        $subtasks = array_values(array_filter($projectTasks, static fn(array $item): bool => (int) ($item['parent_id'] ?? 0) === $taskId));
         $worklogMinutes = array_sum(array_map(static fn(array $item): int => (int) ($item['minutes'] ?? 0), $task['worklogs'] ?? []));
         $meetingMinutes = array_sum(array_map(static fn(array $item): int => (int) ($item['duration_minutes'] ?? 0), $meetings));
         $currentUserId = (int) Session::getLoginUserID();
@@ -55,7 +58,7 @@ class TaskController
             'contacts' => $refs->getContacts(),
             'ticket_categories' => $refs->getTicketCategories((int) $project['entity_id']),
             'asset_types' => (new AssetService())->getTypes(),
-            'project_tasks' => $tasks->getProjectTasks((int) $task['projects_id']),
+            'project_tasks' => $projectTasks,
             'ajax_task_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/ajax/task.php',
             'ajax_document_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/ajax/document.php',
             'my_tasks_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/tasks.php?scope=mine',

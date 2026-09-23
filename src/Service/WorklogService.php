@@ -114,17 +114,22 @@ class WorklogService
         ];
     }
 
-    public function delete(int $id, int $taskId = 0): bool
+    /**
+     * Delete a manual execution entry. Meeting entries are owned by MeetingService and can only
+     * be removed together with their meeting, so the 1:1 synchronization is never broken.
+     */
+    public function delete(int $id, int $taskId): bool
     {
         global $DB;
-        if (!$DB->tableExists(self::TABLE)) return false;
-        $it = $DB->request(['FROM' => self::TABLE, 'WHERE' => ['id' => $id], 'LIMIT' => 1]);
+        if ($id <= 0 || $taskId <= 0 || !$DB->tableExists(self::TABLE)) return false;
+        $it = $DB->request(['FROM' => self::TABLE, 'WHERE' => ['id' => $id, 'projecttasks_id' => $taskId], 'LIMIT' => 1]);
         if (!$it->count()) return false;
         $row = $it->current();
-        if ($taskId > 0 && (int) $row['projecttasks_id'] !== $taskId) return false;
+        if (($row['work_type'] ?? 'execution') !== 'execution' || (int) ($row['meetings_id'] ?? 0) > 0) return false;
         if ((int) $row['users_id'] !== (int) Session::getLoginUserID() && !Session::haveRight('config', UPDATE)) return false;
-        if ($taskId > 0) { $task = new ProjectTask(); if (!$task->getFromDB($taskId) || !$task->canUpdateItem()) return false; }
-        return $DB->delete(self::TABLE, ['id' => $id]);
+        $task = new ProjectTask();
+        if (!$task->getFromDB($taskId) || !$task->canUpdateItem()) return false;
+        return (bool) $DB->delete(self::TABLE, ['id' => $id, 'projecttasks_id' => $taskId, 'work_type' => 'execution']);
     }
 
     public static function formatMinutes(int $minutes): string

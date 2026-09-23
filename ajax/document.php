@@ -2,7 +2,7 @@
 
 use GlpiPlugin\Projectflow\Service\DocumentService;
 
-include('../../../inc/includes.php');
+
 Session::checkLoginUser();
 
 function projectflow_document_response(bool $ok, array $data = [], int $status = 200): never

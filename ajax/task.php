@@ -6,7 +6,7 @@ use GlpiPlugin\Projectflow\Service\MeetingService;
 use GlpiPlugin\Projectflow\Service\TaskService;
 use GlpiPlugin\Projectflow\Service\WorklogService;
 
-include('../../../inc/includes.php');
+
 Session::checkLoginUser();
 
 
@@ -108,7 +108,7 @@ try {
             projectflow_task_json_response(true,['id'=>$id,'worklogs'=>(new WorklogService())->getForTask($taskId),'message'=>'Horas registradas.']);
 
         case 'worklog_delete':
-            $taskId=(int)($input['task_id']??0);if(!(new WorklogService())->delete((int)($input['worklog_id']??0),$taskId))projectflow_task_json_response(false,['message'=>'Não foi possível remover o lançamento.'],400);
+            $taskId=(int)($input['task_id']??0);if($taskId<=0||!(new WorklogService())->delete((int)($input['worklog_id']??0),$taskId))projectflow_task_json_response(false,['message'=>'Não foi possível remover o lançamento.'],400);
             projectflow_task_json_response(true,['worklogs'=>(new WorklogService())->getForTask($taskId),'message'=>'Lançamento removido.']);
 
         case 'meeting_add':

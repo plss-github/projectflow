@@ -73,6 +73,14 @@ class Automation extends CommonDBTM
                 $recipientIds[(int) $projectTask->fields['users_id']] = true;
             }
 
+            // Never notify disabled or deleted accounts (common for group members).
+            foreach (array_keys($recipientIds) as $uid) {
+                $user = new User();
+                if (!$user->getFromDB($uid) || empty($user->fields['is_active']) || !empty($user->fields['is_deleted'])) {
+                    unset($recipientIds[$uid]);
+                }
+            }
+
             $subject = 'Project Flow - lembrete: ' . (string) ($projectTask->fields['name'] ?? ('Tarefa #' . $taskId));
             $url = ProjectTask::getFormURLWithID($taskId);
             $body = 'Você possui um lembrete para a tarefa "' . (string) ($projectTask->fields['name'] ?? '') . '". '
@@ -123,6 +131,9 @@ class Automation extends CommonDBTM
             if ($queued > 0) {
                 $meta->markReminderSent($taskId);
                 $task->addVolume($queued);
+            } elseif ($meta->markReminderFailed($taskId)) {
+                \Toolbox::logError('[Project Flow] reminder for task #' . $taskId . ' abandoned after '
+                    . MetaService::REMINDER_MAX_ATTEMPTS . ' attempts: no deliverable recipient or sender e-mail.');
             }
         }
 

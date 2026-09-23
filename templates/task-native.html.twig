@@ -1,5 +1,5 @@
 <div class="pf-app pf-native-task-v34" id="projectflow-task"
-     data-ui-version="3.4.0-native"
+     data-ui-version="3.4.3-native"
      data-task-id="{{ task.id }}"
      data-project-id="{{ project.id }}"
      data-task-endpoint="{{ ajax_task_url }}"
@@ -253,12 +253,12 @@
             <div class="pf34-field-row"><label>Tipo</label><select name="projecttasktypes_id" class="form-select"><option value="0">Não definido</option>{% for type in task_types %}<option value="{{ type.id }}" {{ type.id == task.projecttasktypes_id ? 'selected' : '' }}>{{ type.name }}</option>{% endfor %}</select></div>
             <div class="pf34-field-row"><label>Projeto</label><a class="pf34-readonly-field" href="{{ project.plugin_url }}"><span>{{ project.name }}</span><i class="ti ti-external-link"></i></a></div>
             <div class="pf34-field-row"><label>Solicitante</label><select name="requester_users_id" class="form-select"><option value="0">Não definido</option>{% for user in users %}<option value="{{ user.id }}" {{ user.id == task.requester_user_id ? 'selected' : '' }}>{{ user.name }}</option>{% endfor %}</select></div>
-            <div class="pf34-field-row"><label>Início</label><input type="datetime-local" name="plan_start_date" class="form-control" value="{{ task.plan_start_date ? task.plan_start_date|date('Y-m-d\TH:i') : '' }}"></div>
-            <div class="pf34-field-row"><label>Data limite</label><input type="datetime-local" name="plan_end_date" class="form-control {{ task.is_overdue ? 'is-invalid' : '' }}" value="{{ task.plan_end_date ? task.plan_end_date|date('Y-m-d\TH:i') : '' }}"></div>
+            <div class="pf34-field-row"><label>Início</label><input type="datetime-local" name="plan_start_date" class="form-control" value="{{ task.plan_start_date ? task.plan_start_date|date('Y-m-d\\TH:i') : '' }}"></div>
+            <div class="pf34-field-row"><label>Data limite</label><input type="datetime-local" name="plan_end_date" class="form-control {{ task.is_overdue ? 'is-invalid' : '' }}" value="{{ task.plan_end_date ? task.plan_end_date|date('Y-m-d\\TH:i') : '' }}"></div>
             <div class="pf34-field-row pf34-field-row-textarea"><label>Descrição</label><textarea name="content" class="form-control" rows="5">{{ task.content_raw }}</textarea></div>
             <div class="pf34-field-row"><label>Ponto de atenção</label><label class="pf34-check"><input type="checkbox" name="attention" value="1" {{ task.attention ? 'checked' : '' }}><span>Destacar tarefa</span></label></div>
             <div class="pf34-field-row"><label>Observação</label><input name="attention_note" class="form-control" value="{{ task.attention_note }}" placeholder="Ex.: aguardando credenciais"></div>
-            <div class="pf34-field-row"><label>Lembrete</label><input type="datetime-local" name="reminder_at" class="form-control" value="{{ task.reminder_at ? task.reminder_at|date('Y-m-d\TH:i') : '' }}"></div>
+            <div class="pf34-field-row"><label>Lembrete</label><input type="datetime-local" name="reminder_at" class="form-control" value="{{ task.reminder_at ? task.reminder_at|date('Y-m-d\\TH:i') : '' }}"></div>
             <div class="pf34-field-row"><label>Notificar</label><div class="pf34-inline-checks"><label><input type="checkbox" name="reminder_browser" value="1" {{ task.reminder_browser ? 'checked' : '' }}> Project Flow</label><label><input type="checkbox" name="reminder_email" value="1" {{ task.reminder_email ? 'checked' : '' }}> E-mail</label></div></div>
             <div class="pf34-savebar"><button type="submit" class="btn btn-warning"><i class="ti ti-device-floppy"></i> Salvar</button></div>
           </form>

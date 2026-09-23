@@ -4,13 +4,14 @@
 
   <section class="pf-project-hero pf-project-hero-v3">
     <div class="pf-breadcrumb-row">
-      <a href="{{ dashboard_url }}"><i class="ti ti-arrow-left"></i> Projetos</a><span>/</span>
+      {% if project.is_template %}<a href="{{ templates_url }}"><i class="ti ti-arrow-left"></i> Templates</a><span>/</span>{% else %}<a href="{{ dashboard_url }}"><i class="ti ti-arrow-left"></i> Projetos</a><span>/</span>{% endif %}
       <span>{{ project.code ?: 'PROJ-' ~ project.id }}</span>{% if project.portfolio %}<span>/</span><span>{{ project.portfolio }}</span>{% endif %}
     </div>
     <div class="pf-project-title-row">
       <div class="pf-project-heading">
         <div class="pf-title-with-state">
-          <h1>{{ project.name }}</h1>
+          <h1>{{ project.is_template and project.template_name ? project.template_name : project.name }}</h1>
+          {% if project.is_template %}<span class="pf-template-badge" title="As tarefas, equipe e configurações deste template são copiadas para cada projeto criado a partir dele."><i class="ti ti-template"></i> Template</span>{% endif %}
           <span class="pf-state-badge" style="--pf-state-color:{{ project.state.color }}"><i></i>{{ project.state.name }}</span>
           <span class="pf-priority-badge pf-priority-{{ project.priority }}"><i class="ti ti-flag"></i>{{ project.priority_name }}</span>
           {% if task_stats.attention %}<span class="pf-attention-badge"><i class="ti ti-alert-triangle"></i>{{ task_stats.attention }} atenção</span>{% endif %}
@@ -59,7 +60,7 @@
           {% endif %}
         </section>
         <aside class="pf-overview-side">
-          <section class="pf-panel"><div class="pf-panel-header"><h3>Próximas entregas</h3><button class="btn btn-sm btn-ghost-secondary" data-pf-goto="execution">Ver execução</button></div>{% set ns = namespace(count=0) %}{% for task in tasks %}{% if not task.state.is_finished and ns.count < 5 %}{% set ns.count = ns.count + 1 %}<a class="pf-next-task" href="{{ task.task_url }}"><div><strong>{{ task.name }}</strong><span>{{ task.state.name }} · {{ task.percent_done }}%</span></div><time class="{{ task.is_overdue ? 'pf-text-danger' : '' }}">{{ task.plan_end_date ? task.plan_end_date|date('d/m') : '—' }}</time></a>{% endif %}{% endfor %}{% if ns.count == 0 %}<div class="pf-empty-inline">Nenhuma tarefa ativa.</div>{% endif %}</section>
+          <section class="pf-panel"><div class="pf-panel-header"><h3>Próximas entregas</h3><button class="btn btn-sm btn-ghost-secondary" data-pf-goto="execution">Ver execução</button></div>{% for task in upcoming_tasks %}<a class="pf-next-task" href="{{ task.task_url }}"><div><strong>{{ task.name }}</strong><span>{{ task.state.name }} · {{ task.percent_done }}%</span></div><time class="{{ task.is_overdue ? 'pf-text-danger' : '' }}">{{ task.plan_end_date ? task.plan_end_date|date('d/m') : '—' }}</time></a>{% else %}<div class="pf-empty-inline">Nenhuma tarefa ativa.</div>{% endfor %}</section>
           <section class="pf-panel"><div class="pf-panel-header"><h3>Governança</h3></div><dl class="pf-detail-list"><div><dt>Patrocinador</dt><dd>{{ project.sponsor ?: 'Não definido' }}</dd></div><div><dt>Portfólio</dt><dd>{{ project.portfolio ?: 'Não definido' }}</dd></div><div><dt>Risco</dt><dd>{{ project.risk_level|capitalize }}</dd></div><div><dt>Contrato</dt><dd>{{ project.contracts|length ? project.contracts[0].name : 'Não vinculado' }}</dd></div></dl></section>
         </aside>
       </div>
@@ -112,7 +113,7 @@
     <section class="pf-tab-pane" data-pf-pane="weekly">
       <div class="pf-section-heading"><div><div class="pf-eyebrow">CLIENTE</div><h2>Relatório semanal</h2><p>Consolida automaticamente tarefas, atividades, pontos de atenção, reuniões e horas da semana.</p></div></div>
       <div class="pf-report-toolbar"><select class="form-select" id="pf-report-week">{% for week in weeks %}<option value="{{ week.start }}">{{ week.label }}</option>{% endfor %}</select><button class="btn btn-primary" id="pf-report-generate"><i class="ti ti-refresh"></i> Gerar</button><button class="btn btn-outline-secondary" id="pf-report-copy"><i class="ti ti-copy"></i> Copiar</button>{% if project.can_update %}<button class="btn btn-outline-primary" id="pf-report-save"><i class="ti ti-device-floppy"></i> Salvar versão</button>{% endif %}</div>
-      <section class="pf-panel pf-report-paper"><textarea id="pf-weekly-report-text" class="form-control">{{ weekly_report.text }}</textarea></section>
+      <section class="pf-panel pf-report-paper"><textarea id="pf-weekly-report-text" class="form-control" data-pf-lazy="1" placeholder="Selecione a semana e clique em Gerar. O relatório é montado automaticamente ao abrir esta aba.">{{ weekly_report.text }}</textarea></section>
       {% if saved_reports %}<section class="pf-panel mt-3"><div class="pf-panel-header"><h3>Versões salvas</h3></div><div class="pf-saved-reports">{% for report in saved_reports %}<button type="button" data-report-content="{{ report.content|e('html_attr') }}"><strong>{{ report.week_start|date('d/m') }} - {{ report.week_end|date('d/m/Y') }}</strong><span>{{ report.date_generation|date('d/m/Y H:i') }} · {{ report.user_name }}</span></button>{% endfor %}</div></section>{% endif %}
     </section>
 

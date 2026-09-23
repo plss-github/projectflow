@@ -30,6 +30,7 @@ class DashboardController
             'portfolios'=>$portfolios,
             'can_create_project'=>Session::haveRight(Project::$rightname,CREATE),
             'native_create_url'=>Project::getFormURL(false),
+            'native_list_url'=>Project::getSearchURL(true).'?reset=reset',
             'ajax_project_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/ajax/project.php',
             'my_tasks_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/tasks.php?scope=mine',
             'tasks_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/tasks.php?scope=mine',

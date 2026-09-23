@@ -1,15 +1,19 @@
-# Operação, atualização e homologação - Project Flow 3.3
+# Operação, atualização e homologação - Project Flow 3.4.3
 
 ## Atualização a partir de 0.x / 1.x / 2.x
 
 1. Faça backup do banco.
 2. Faça backup de `plugins/projectflow`.
 3. Desative o Project Flow, mas **não desinstale**.
-4. Substitua a pasta antiga pela versão 3.
+4. Substitua integralmente a pasta antiga pela versão 3.4.3 (o pacote já traz a pasta raiz `projectflow/`).
 5. Em **Configurar -> Plugins**, execute a atualização.
 6. Ative o plugin.
 7. Limpe cache do GLPI/navegador se necessário.
 8. Abra **Project Flow -> Configurações**.
+
+### Tela antiga aparecendo fora do modo debug
+
+O GLPI compila os templates Twig e, em produção, não relê os arquivos. O modo debug usa um cache compilado separado. Desde a 3.4.3 o Project Flow renderiza pelo conteúdo do template, então trocar os arquivos já produz a tela nova. Se outro plugin tiver o mesmo sintoma, limpe `files/_cache/*/templates` no servidor (`php bin/console cache:clear`, executado com o usuário do servidor web).
 
 ## Configuração obrigatória antes do teste
 
@@ -21,7 +25,7 @@
    - Tarefa + chamado.
 5. Escolha o controle padrão:
    - Horas; ou
-   - Monetário + horas.
+   - Custo financeiro (horas continuam registradas separadamente).
 6. Se usar e-mail de lembrete, valide SMTP e cron do GLPI.
 
 Exemplo de progresso:
@@ -62,7 +66,8 @@ Exemplo de progresso:
 - Buscar e vincular ativo por nome/ID.
 - Criar dependência.
 - Configurar ponto de atenção e lembrete.
-- Verificar a tarefa em **Assistência > Minhas tarefas**.
+- Verificar a tarefa em **Projetos > Minhas tarefas**, inclusive quando o projeto é antigo (fora dos projetos modificados recentemente).
+- Confirmar que o lançamento de horas de uma reunião não pode ser removido pela seção Execuções (só removendo a reunião).
 
 ### Modo tarefa + chamado
 - Criar projeto no modo `ticket`.
@@ -107,6 +112,8 @@ Exemplo de progresso:
 - Confirmar badge/banner no Project Flow.
 - Executar o cron `taskreminders`.
 - Confirmar fila/e-mail quando o canal de e-mail estiver habilitado.
+- Tarefa atribuída só a grupo com um membro inativo: o inativo não recebe e-mail.
+- Lembrete sem destinatário com e-mail: é retentado a cada execução e abandonado após 24 tentativas, sem bloquear lembretes novos (ver log do GLPI).
 
 ### Tela operacional da tarefa
 - Conferir menu lateral: Tarefa, Execuções, Reuniões, Tarefas, Ativos, Documentos, Chamados, Dependências e Histórico.

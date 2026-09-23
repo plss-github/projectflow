@@ -1,19 +1,27 @@
 <div class="pf-app {{ compact_cards ? 'pf-compact' : '' }}" id="projectflow-dashboard"
      data-project-endpoint="{{ ajax_project_url }}" data-csrf="{{ csrf_token }}" data-default-view="{{ default_view }}">
-  <section class="pf-hero pf-hero-dashboard">
-    <div>
-      <div class="pf-eyebrow">PORTFÓLIO DE PROJETOS</div>
-      <h1>Project Flow</h1>
-      <p>Gestão visual e operacional sobre os projetos nativos do GLPI.</p>
-    </div>
-    <div class="pf-hero-actions">
-      <a class="btn btn-outline-secondary pf-btn" href="{{ tasks_url }}"><i class="ti ti-list-check"></i> Tarefas de Projeto</a>
-      <a class="btn btn-outline-secondary pf-btn" href="{{ templates_url }}"><i class="ti ti-template"></i> Templates</a>
-      {% if can_create_project %}
-        <button class="btn btn-primary pf-btn" type="button" data-bs-toggle="modal" data-bs-target="#pf-project-create-modal"><i class="ti ti-plus"></i> Novo projeto</button>
-      {% endif %}
-    </div>
-  </section>
+  <nav class="pf-dash-menu" aria-label="Ações do portfólio">
+    <a class="pf-dash-menu-link" href="{{ tasks_url }}"><i class="ti ti-list-check"></i> Minhas tarefas</a>
+    <a class="pf-dash-menu-link" href="{{ native_list_url }}" title="Lista de projetos nativa do GLPI (busca avançada, ações em massa)"><i class="ti ti-list-search"></i> Lista nativa</a>
+    {% if can_create_project %}
+      <div class="btn-group pf-dash-menu-new">
+        <button class="btn btn-primary btn-sm" type="button" data-pf-new-project="0" data-bs-toggle="modal" data-bs-target="#pf-project-create-modal"><i class="ti ti-plus"></i> Novo projeto</button>
+        <button class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Criar a partir de template"><span class="visually-hidden">Mais opções</span></button>
+        <div class="dropdown-menu dropdown-menu-end pf-dash-menu-dropdown">
+          <button class="dropdown-item" type="button" data-pf-new-project="0" data-bs-toggle="modal" data-bs-target="#pf-project-create-modal"><i class="ti ti-file-plus"></i> Projeto em branco</button>
+          <div class="dropdown-divider"></div>
+          <h6 class="dropdown-header">A partir de template</h6>
+          {% for template in templates %}
+            <button class="dropdown-item" type="button" data-pf-new-project="{{ template.id }}"><i class="ti ti-template"></i> {{ template.name }}</button>
+          {% else %}
+            <span class="dropdown-item-text text-muted small">Nenhum template nativo cadastrado.</span>
+          {% endfor %}
+          <div class="dropdown-divider"></div>
+          <a class="dropdown-item" href="{{ templates_url }}"><i class="ti ti-settings"></i> Gerenciar templates</a>
+        </div>
+      </div>
+    {% endif %}
+  </nav>
 
   <section class="pf-kpi-grid">
     <button class="pf-kpi" type="button" data-pf-quick="all"><span class="pf-kpi-icon"><i class="ti ti-folders"></i></span><span><small>Visíveis</small><strong>{{ stats.total }}</strong></span></button>
@@ -74,7 +82,7 @@
   {% endif %}
 
   {% if can_create_project %}
-  <div class="modal fade" id="pf-project-create-modal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered"><div class="modal-content pf-modal-content">
+  <div class="modal fade" id="pf-project-create-modal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content pf-modal-content">
     <form id="pf-project-create-form">
       <div class="modal-header"><div><div class="pf-eyebrow">NOVO PROJETO</div><h2 class="modal-title fs-4">Criar projeto</h2><p class="mb-0 text-muted">Crie do zero ou clone um template nativo do GLPI.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body"><input type="hidden" name="action" value="create"><input type="hidden" name="_glpi_csrf_token" value="{{ csrf_token }}">

@@ -1,9 +1,8 @@
 <?php
 
-use Glpi\Application\View\TemplateRenderer;
 use GlpiPlugin\Projectflow\Application\TasksController;
 
-include('../../../inc/includes.php');
+
 Session::checkLoginUser();
 if (!ProjectTask::canView()) {
     Html::displayRightError();
@@ -11,6 +10,7 @@ if (!ProjectTask::canView()) {
 }
 $scope = (string) ($_GET['scope'] ?? 'mine');
 $includeFinished = !empty($_GET['finished']);
-Html::header('Minhas tarefas', $_SERVER['PHP_SELF'], 'helpdesk', GlpiPlugin\Projectflow\AssistanceMenu::class);
-TemplateRenderer::getInstance()->display('@projectflow/tasks.html.twig', (new TasksController())->index($scope, $includeFinished));
+plugin_projectflow_register_assets();
+Html::header('Minhas tarefas', $_SERVER['PHP_SELF'], 'tools', plugin_projectflow_header_item());
+plugin_projectflow_display('tasks.html.twig', (new TasksController())->index($scope, $includeFinished));
 Html::footer();

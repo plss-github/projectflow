@@ -5,7 +5,7 @@ use GlpiPlugin\Projectflow\Service\MeetingService;
 use GlpiPlugin\Projectflow\Service\ProjectService;
 use GlpiPlugin\Projectflow\Service\WeeklyReportService;
 
-include('../../../inc/includes.php');
+
 Session::checkLoginUser();
 
 
@@ -44,6 +44,11 @@ try {
             $id = $service->create($input);
             if (!$id) projectflow_json_response(false, ['message' => 'Não foi possível criar o projeto. Verifique permissões e campos obrigatórios.'], 400);
             projectflow_json_response(true, ['id' => $id, 'url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/project.php?id=' . $id, 'message' => 'Projeto criado com sucesso.']);
+
+        case 'template_create':
+            $id = $service->createTemplate($input);
+            if (!$id) projectflow_json_response(false, ['message' => 'Não foi possível criar o template. Verifique o nome, a entidade e suas permissões.'], 400);
+            projectflow_json_response(true, ['id' => $id, 'url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/project.php?id=' . $id . '#execution', 'message' => 'Template criado.']);
 
         case 'update':
             $id = (int)($input['id'] ?? 0);

@@ -19,19 +19,26 @@ use User;
 
 class ReferenceService
 {
+    /** Per-request caches: states and task types are read many times while rendering one page. */
+    private static ?array $statesCache = null;
+    private static ?array $taskTypesCache = null;
+
+    public static function resetCache(): void { self::$statesCache = null; self::$taskTypesCache = null; }
+
     public function getProjectStates(): array
     {
         global $DB;
+        if (self::$statesCache !== null) return self::$statesCache;
         $rows=[];
         foreach($DB->request(['FROM'=>ProjectState::getTable(),'ORDERBY'=>['is_finished ASC','id ASC']]) as $row){
             $rows[]=['id'=>(int)$row['id'],'name'=>(string)$row['name'],'color'=>$row['color']?:'#94a3b8','is_finished'=>(bool)$row['is_finished']];
         }
-        return $rows;
+        return self::$statesCache = $rows;
     }
     public function getStateMap(): array { $map=[]; foreach($this->getProjectStates() as $s)$map[$s['id']]=$s; return $map; }
 
     public function getProjectTypes(): array { return $this->simpleDropdown(ProjectType::getTable()); }
-    public function getTaskTypes(): array { return $this->simpleDropdown(ProjectTaskType::getTable()); }
+    public function getTaskTypes(): array { return self::$taskTypesCache ??= $this->simpleDropdown(ProjectTaskType::getTable()); }
 
     public function getPriorities(): array
     { $rows=[]; for($i=1;$i<=6;$i++)$rows[]=['id'=>$i,'name'=>CommonITILObject::getPriorityName($i)]; return $rows; }
@@ -82,7 +89,7 @@ class ReferenceService
     public function getTemplates(): array
     {
         global $DB;$rows=[];$table=Project::getTable();$criteria=['FROM'=>$table,'WHERE'=>array_merge(["$table.is_template"=>1,"$table.is_deleted"=>0],getEntitiesRestrictCriteria($table,'','',true)),'ORDERBY'=>["$table.template_name ASC","$table.name ASC"]];
-        foreach($DB->request($criteria) as $r){$p=new Project();$p->getFromResultSet($r);if(!$p->canViewItem())continue;$rows[]=['id'=>(int)$r['id'],'name'=>(string)(($r['template_name']??'')?:($r['name']??('Template #'.$r['id']))),'description'=>trim(strip_tags((string)($r['content']??''))),'native_url'=>Project::getFormURLWithID((int)$r['id'])];} return $rows;
+        foreach($DB->request($criteria) as $r){$p=new Project();$p->getFromResultSet($r);if(!$p->canViewItem())continue;$rows[]=['id'=>(int)$r['id'],'name'=>(string)(($r['template_name']??'')?:($r['name']??('Template #'.$r['id']))),'description'=>trim(strip_tags((string)($r['content']??''))),'native_url'=>Project::getFormURLWithID((int)$r['id']),'plugin_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/project.php?id='.(int)$r['id'],'tasks_count'=>countElementsInTable('glpi_projecttasks',['projects_id'=>(int)$r['id'],'is_deleted'=>0]),'can_update'=>$p->canUpdateItem()];} return $rows;
     }
 
     public function getContracts(int $entityId=0,int $limit=500): array

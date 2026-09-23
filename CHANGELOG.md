@@ -1,5 +1,76 @@
 # Changelog
 
+## 3.4.3 - 2026-09-23
+
+### Correções
+- **Minhas tarefas / Todas as visíveis**: o limite de linhas passa a ser aplicado depois dos filtros (minhas, finalizadas, permissão) e a fila não depende mais do limite de 1000 projetos do portfólio. Tarefas de projetos antigos voltam a aparecer.
+- **Cron `taskreminders`**: nova coluna `reminder_attempts`. Lembretes que falham descem na fila e são abandonados (com log) após 24 tentativas, sem bloquear lembretes novos. Usuários inativos ou excluídos não são mais notificados.
+- **Horas**: a exclusão de lançamento exige a tarefa e aceita só lançamentos de execução. As horas de reunião só saem junto com a reunião, preservando a sincronia 1:1.
+- **Busca de ativos**: filtro de entidade, lixeira e template aplicado no SQL, com paginação até preencher o limite. Sem consulta extra por item.
+- **Desvincular ativo** retorna falha quando o vínculo não existe.
+- **Saúde automática**: projeto finalizado não é mais marcado como crítico por tarefas atrasadas.
+- **Solicitante da tarefa** validado também na criação (antes só na edição).
+
+### Desempenho
+- Cache por requisição de estados e tipos de tarefa, e de nomes de usuário na normalização das tarefas.
+- A tela da tarefa carrega só o contexto do projeto (nome, link, entidade), não mais o workspace completo, e lista as tarefas do projeto uma única vez.
+- O relatório semanal é gerado sob demanda, ao abrir a aba ou clicar em **Gerar**, e não a cada abertura do projeto.
+- As estatísticas de tarefas do projeto não são mais calculadas duas vezes.
+
+### Menu
+- **Ferramentas > Projetos** passa a abrir o portfólio do Project Flow, e a entrada separada "Project Flow" no menu Ferramentas deixa de existir. As telas do plugin aparecem com o breadcrumb Ferramentas > Projetos.
+- Acessar `/front/project.php` sem parâmetros redireciona para o Project Flow. A lista nativa, com busca avançada e ações em massa, continua disponível pelo botão **Lista nativa** do portfólio.
+- A entrada **Assistência > Minhas tarefas** foi removida. As tarefas passam a ser acessadas só pelo botão **Minhas tarefas** do portfólio de projetos, e as telas de tarefa aparecem sob Ferramentas > Projetos.
+- Nova opção em Configurações, "Abrir o Project Flow em Ferramentas > Projetos", ligada por padrão. Desligada, o comportamento anterior volta.
+
+### Portfólio
+- O cabeçalho grande do portfólio (título, descrição e quatro botões) foi substituído por uma barra de ações compacta: **Minhas tarefas**, **Lista nativa** e **Novo projeto**.
+- A barra de ações ganhou fundo, espaçamento e altura uniforme. Os assets passam a levar um carimbo de conteúdo na URL (`?h=`), então o navegador pega CSS/JS novos sem Ctrl+F5, mesmo dentro da mesma versão.
+- **Novo projeto** virou um botão dividido. O menu tem "Projeto em branco", a lista de templates nativos (cada um abre a criação com o template já selecionado) e "Gerenciar templates".
+
+### Templates
+- A tela **Gerenciar templates** agora cria templates. **Novo template** tem os mesmos campos da criação de projeto (identificação, planejamento e governança, contabilização) e pode partir do zero, copiar um projeto existente (tarefas, equipe e relações) ou duplicar outro template.
+- Os modais de criação (projeto e template) passam a rolar por dentro, com cabeçalho e rodapé fixos. Antes, formulários longos ficavam cortados sem barra de rolagem.
+- As tarefas do template podem ser cadastradas no próprio formulário: nome, tipo, horas previstas, executor padrão, marco e descrição, com quantas linhas forem necessárias (Enter adiciona outra).
+- Tarefas guardadas em um template de projeto do tipo "Tarefa + chamado" não abrem chamado. Os chamados só são criados em projetos reais.
+- `ProjectService::create()` passa a atender projetos e templates (`createTemplate()` delega para ele). Ao copiar uma origem, os metadados do Project Flow dela (modos, horas previstas, portfólio...) são herdados quando o campo fica em branco.
+- Depois de criado, o template abre no workspace do Project Flow para receber tarefas, com o selo "Template" e o caminho de volta para Templates.
+- Os cards de template mostram a quantidade de tarefas e as ações **Usar**, **Editar** e o formulário nativo.
+
+### Configurações
+- **Estados de projetos e tarefas:** criar, editar e excluir estados (nome, cor, finalizado, % no Kanban e comentário). Projetos e tarefas compartilham a lista de estados, como no GLPI. Um estado só pode ser excluído quando nenhum projeto ou tarefa o usa, quando não é o estado inicial configurado e quando não é destino de uma regra.
+- **Tipos de projeto** e **tipos de tarefa:** criar, editar e excluir pela própria tela, usando os dropdowns nativos `ProjectType` e `ProjectTaskType`. A exclusão é bloqueada enquanto o tipo estiver em uso.
+- **Regras por andamento** (nova tabela `glpi_plugin_projectflow_progressrules`): cada regra tem uma faixa de percentual, um estado de destino opcional e uma notificação opcional por e-mail (solicitante, gestor do projeto, executores da tarefa e/ou um grupo), além de ordem e ativação.
+  - Ao mudar o andamento, a primeira regra ativa que contém o novo percentual define o estado.
+  - Quando o estado é alterado junto com o andamento (por exemplo, pelo Kanban), a regra não troca o estado, só notifica.
+  - A notificação é enviada ao entrar na faixa e não vai para quem fez a alteração.
+  - As regras valem para qualquer tela (Project Flow, Kanban ou formulário nativo), pelo hook `item_update` de `ProjectTask`.
+- A tabela de regras é criada também ao abrir as Configurações, então funciona mesmo quando os arquivos são trocados sem rodar a atualização do plugin.
+- Corrige o erro "A ação que você requisitou não é permitida" ao salvar as Configurações. No GLPI 11, o kernel já valida o token CSRF de todo POST e o descarta; a segunda checagem em `front/config.php` sempre falhava.
+- Depois de salvar, as Configurações voltam para a própria página. Antes caíam na página inicial do GLPI, porque no GLPI 11 `PHP_SELF` é `/index.php`.
+- Nova rota `ajax/config.php`, que exige o direito de configuração e o token CSRF.
+
+### Tarefa
+- Corrige Início, Data limite e Lembrete aparecendo vazios no painel da tarefa, embora estivessem gravados. O formato `'Y-m-d\TH:i'` do Twig virava o fuso horário (`T`), e o campo `datetime-local` recusava o valor. Ao salvar a tarefa, as datas eram apagadas.
+
+### Cache de templates
+- Corrige telas antigas aparecendo fora do modo debug depois de trocar os arquivos do plugin sem reinstalar. O GLPI compila os templates Twig pelo caminho do arquivo e, em produção, não relê o arquivo. Se o cache compilado não puder ser apagado pelo servidor web (arquivos criados por outro usuário no container), a tela velha fica para sempre.
+- As páginas do Project Flow passam a renderizar pelo conteúdo do template (`plugin_projectflow_display()`). O cache compilado passa a ser identificado pelo conteúdo, então qualquer alteração gera compilação nova, e templates inalterados continuam usando o cache normal do Twig.
+
+### Release e limpeza
+- O workflow gera `projectflow-<versão>.tar.gz` com a pasta raiz `projectflow/`, valida a sintaxe PHP/JS e só publica quando a versão do `setup.php` ainda não tem tag.
+- Removidos arquivos sem uso: `templates/task.html.twig`, `templates/mytasks.html.twig`, `MyTasksController` e os CSS/JS de versões anteriores. `front/mytasks.php` segue como redirecionamento para links antigos.
+- Removida a opção `weekly_sprint_start`, que nunca foi usada (a linha é limpa na atualização).
+- Assets renomeados para `projectflow-3.4.3.css/js`. Documentação atualizada.
+
+## 3.4.2 - 2026-09-23
+
+- Remove inclusões manuais de `inc/includes.php` dos endpoints `front/` e `ajax/`, pois o GLPI 11 inicializa esses scripts pelo entrypoint central.
+- Corrige os warnings de `include('../../../inc/includes.php')` quando o plugin está instalado via Marketplace.
+- Corrige erro Twig `Unknown "namespace" function` na página do projeto; próximas entregas agora são preparadas pelo controller.
+- Assets CSS/JS passam a ser registrados pela própria página imediatamente antes de `Html::header()`, sem varrer a URI de todas as páginas do GLPI.
+- Novos assets versionados `projectflow-3.4.2.css` e `projectflow-3.4.2.js`.
+
 ## 3.4.1 - 2026-09-22
 
 - Corrige carregamento de CSS e JavaScript no GLPI 11 quando o plugin está instalado via `marketplace/`.

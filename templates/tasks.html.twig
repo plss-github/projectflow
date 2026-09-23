@@ -1,7 +1,7 @@
 <div class="pf-app pf-assistance-queue" id="projectflow-task-center">
   <section class="pf-assistance-queue-header">
     <div>
-      <div class="pf-breadcrumb-row"><span>Assistência</span><span>/</span><strong>Minhas tarefas</strong></div>
+      <div class="pf-breadcrumb-row"><a href="{{ dashboard_url }}">Projetos</a><span>/</span><strong>{{ scope == 'mine' ? 'Minhas tarefas' : 'Tarefas de projeto' }}</strong></div>
       <h1>{{ scope == 'mine' ? 'Minhas tarefas' : 'Tarefas de projeto' }}</h1>
       <p>{{ scope == 'mine' ? 'Tarefas de projeto atribuídas diretamente a você ou aos seus grupos.' : 'Tarefas de projeto que seu perfil pode visualizar.' }}</p>
     </div>

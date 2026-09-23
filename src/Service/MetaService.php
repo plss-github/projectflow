@@ -11,6 +11,9 @@ class MetaService
     private const FAVORITES = 'glpi_plugin_projectflow_favorites';
     private const STATE_PROGRESS = 'glpi_plugin_projectflow_stateprogress';
 
+    /** Hourly cron attempts before an undeliverable e-mail reminder is abandoned (~24h). */
+    public const REMINDER_MAX_ATTEMPTS = 24;
+
     public function getForProject(int $projectId): array
     {
         global $DB;
@@ -67,7 +70,7 @@ class MetaService
         global $DB;
         $defaults = [
             'requester_users_id' => 0, 'priority' => 3, 'attention' => 0, 'attention_note' => '', 'reminder_at' => null,
-            'reminder_email' => 1, 'reminder_browser' => 1, 'reminder_sent_at' => null,
+            'reminder_email' => 1, 'reminder_browser' => 1, 'reminder_sent_at' => null, 'reminder_attempts' => 0,
         ];
         if (!$DB->tableExists(self::TASK_META)) return $defaults;
         $it = $DB->request(['FROM' => self::TASK_META, 'WHERE' => ['projecttasks_id' => $taskId], 'LIMIT' => 1]);
@@ -93,9 +96,9 @@ class MetaService
         return $result;
     }
 
-    private function getTaskMetaDefaults(): array
+    public function getTaskMetaDefaults(): array
     {
-        return ['requester_users_id' => 0, 'priority' => 3, 'attention' => 0, 'attention_note' => '', 'reminder_at' => null, 'reminder_email' => 1, 'reminder_browser' => 1, 'reminder_sent_at' => null];
+        return ['requester_users_id' => 0, 'priority' => 3, 'attention' => 0, 'attention_note' => '', 'reminder_at' => null, 'reminder_email' => 1, 'reminder_browser' => 1, 'reminder_sent_at' => null, 'reminder_attempts' => 0];
     }
 
     public function saveTaskMeta(int $taskId, array $input): bool
@@ -116,6 +119,9 @@ class MetaService
             'reminder_browser' => array_key_exists('reminder_browser', $input) ? (!empty($input['reminder_browser']) ? 1 : 0) : (int) $current['reminder_browser'],
             'reminder_sent_at' => $changedReminder ? null : $current['reminder_sent_at'],
         ];
+        if ($changedReminder && $DB->fieldExists(self::TASK_META, 'reminder_attempts')) {
+            $data['reminder_attempts'] = 0;
+        }
         if (countElementsInTable(self::TASK_META, ['projecttasks_id' => $taskId])) {
             return $DB->update(self::TASK_META, $data, ['projecttasks_id' => $taskId]);
         }
@@ -147,10 +153,30 @@ class MetaService
                 'reminder_email' => 1,
                 'reminder_sent_at' => null,
             ],
-            'ORDERBY' => ['reminder_at ASC'],
+            // Reminders that keep failing (no recipient e-mail, no sender) sink to the end of
+            // the queue so they can never starve newer reminders out of the batch.
+            'ORDERBY' => $DB->fieldExists(self::TASK_META, 'reminder_attempts') ? ['reminder_attempts ASC', 'reminder_at ASC'] : ['reminder_at ASC'],
             'LIMIT' => 200,
         ]) as $row) $rows[] = $row;
         return $rows;
+    }
+
+    /**
+     * Register an unsuccessful delivery attempt. Returns true when the reminder was abandoned
+     * (marked as sent) after REMINDER_MAX_ATTEMPTS attempts.
+     */
+    public function markReminderFailed(int $taskId): bool
+    {
+        global $DB;
+        if (!$DB->tableExists(self::TASK_META) || !$DB->fieldExists(self::TASK_META, 'reminder_attempts')) return false;
+        $it = $DB->request(['SELECT' => ['reminder_attempts'], 'FROM' => self::TASK_META, 'WHERE' => ['projecttasks_id' => $taskId], 'LIMIT' => 1]);
+        if (!$it->count()) return false;
+        $attempts = min(255, (int) $it->current()['reminder_attempts'] + 1);
+        $data = ['reminder_attempts' => $attempts];
+        $abandon = $attempts >= self::REMINDER_MAX_ATTEMPTS;
+        if ($abandon) $data['reminder_sent_at'] = date('Y-m-d H:i:s');
+        $DB->update(self::TASK_META, $data, ['projecttasks_id' => $taskId]);
+        return $abandon;
     }
 
     public function markReminderSent(int $taskId): void

@@ -38,7 +38,8 @@ class AssetService
     public function remove(int $taskId,int $relationId): bool
     {
         global $DB; $task=new ProjectTask(); if(!$task->getFromDB($taskId)||!$task->canUpdateItem())return false;
-        return $DB->delete(self::TABLE,['id'=>$relationId,'projecttasks_id'=>$taskId]);
+        if($relationId<=0||!countElementsInTable(self::TABLE,['id'=>$relationId,'projecttasks_id'=>$taskId]))return false;
+        return (bool)$DB->delete(self::TABLE,['id'=>$relationId,'projecttasks_id'=>$taskId]);
     }
 
 
@@ -51,28 +52,49 @@ class AssetService
         }
         $query = trim($query);
         if ($query === '') return [];
+        $limit = max(1, min(50, $limit));
         $table = $type::getTable();
-        $where = ['name' => ['LIKE', '%' . $query . '%']];
+
+        $match = ["$table.name" => ['LIKE', '%' . $query . '%']];
         if (ctype_digit($query)) {
-            $where = ['OR' => [['id' => (int) $query], ['name' => ['LIKE', '%' . $query . '%']]]];
+            $match = ['OR' => [["$table.id" => (int) $query], ["$table.name" => ['LIKE', '%' . $query . '%']]]];
         }
+        // Push the cheap visibility filters into SQL (entity scope, trash, templates) so the
+        // LIMIT is not consumed by rows the user could never see.
+        $where = [$match];
+        if ($DB->fieldExists($table, 'is_deleted')) $where["$table.is_deleted"] = 0;
+        if ($DB->fieldExists($table, 'is_template')) $where["$table.is_template"] = 0;
+        if ($DB->fieldExists($table, 'entities_id')) {
+            $where = array_merge($where, getEntitiesRestrictCriteria($table, '', '', $DB->fieldExists($table, 'is_recursive')));
+        }
+
         $items = [];
-        foreach ($DB->request([
-            'SELECT' => ['id', 'name'],
-            'FROM' => $table,
-            'WHERE' => $where,
-            'ORDERBY' => ['name ASC', 'id ASC'],
-            'LIMIT' => max(1, min(50, $limit)),
-        ]) as $row) {
-            $item = new $type();
-            if (!$item->getFromDB((int) $row['id']) || !$item->canViewItem()) continue;
-            $items[] = [
-                'id' => (int) $row['id'],
-                'name' => (string) ($item->getName() ?: (self::TYPES[$type] . ' #' . $row['id'])),
-                'label' => (string) ($item->getName() ?: (self::TYPES[$type] . ' #' . $row['id'])) . ' · #' . (int) $row['id'],
-                'url' => $type::getFormURLWithID((int) $row['id']),
-            ];
-        }
+        $offset = 0;
+        $chunk = 50;
+        do {
+            $batch = 0;
+            foreach ($DB->request([
+                'FROM' => $table,
+                'WHERE' => $where,
+                'ORDERBY' => ["$table.name ASC", "$table.id ASC"],
+                'START' => $offset,
+                'LIMIT' => $chunk,
+            ]) as $row) {
+                $batch++;
+                $item = new $type();
+                $item->getFromResultSet($row);
+                if (!$item->canViewItem()) continue;
+                $name = (string) ($item->getName() ?: (self::TYPES[$type] . ' #' . $row['id']));
+                $items[] = [
+                    'id' => (int) $row['id'],
+                    'name' => $name,
+                    'label' => $name . ' · #' . (int) $row['id'],
+                    'url' => $type::getFormURLWithID((int) $row['id']),
+                ];
+                if (count($items) >= $limit) break 2;
+            }
+            $offset += $chunk;
+        } while ($batch === $chunk && $offset < 1000);
         return $items;
     }
 
