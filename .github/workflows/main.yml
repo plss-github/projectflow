@@ -1,10 +1,10 @@
+# .github/workflows/main.yml
 name: Release GLPI Plugin
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -19,54 +19,32 @@ jobs:
     steps:
       - name: Baixar código
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Definir versão da release
         id: vars
         run: |
-          VERSION=$(grep -oP "define\('PLUGIN_PROJECTFLOW_VERSION',\s*'\K[^']+" setup.php)
-          if [ -z "$VERSION" ]; then
-            echo "Versão não encontrada em setup.php" >&2
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          # Só publica quando a versão do setup.php ainda não tem tag.
-          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag $VERSION já existe; nenhuma release será criada."
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
+          VERSION=$(grep -oP "\S*'PLUGIN_\w*_VERSION'\,\s*'\K[^']+" setup.php)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Validar sintaxe
-        if: steps.vars.outputs.exists == 'false'
+      - name: Criar tar.gz do repositório (ignorando .github/.git)
         run: |
-          find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
-          node --check "public/js/projectflow-${{ steps.vars.outputs.version }}.js"
+          TAR_PATH="/tmp/${{ env.PLUGIN_NAME }}.tar.gz"
 
-      - name: Montar pacote com pasta raiz projectflow/
-        if: steps.vars.outputs.exists == 'false'
-        run: |
-          STAGE="$(mktemp -d)"
-          mkdir -p "$STAGE/${{ env.PLUGIN_NAME }}"
-          rsync -a \
-            --exclude=.git \
+          tar -czf "$TAR_PATH" \
             --exclude=.github \
-            --exclude=.gitattributes \
-            --exclude='*.tar.gz' \
-            ./ "$STAGE/${{ env.PLUGIN_NAME }}/"
-          tar -czf "./${{ env.PLUGIN_NAME }}-${{ steps.vars.outputs.version }}.tar.gz" \
-            -C "$STAGE" "${{ env.PLUGIN_NAME }}"
-          tar -tzf "./${{ env.PLUGIN_NAME }}-${{ steps.vars.outputs.version }}.tar.gz" | head -5
+            --exclude=.git \
+            --exclude="${{ env.PLUGIN_NAME }}.tar.gz" \
+            --transform "s|^|${{ env.PLUGIN_NAME }}/|" \
+            .
+
+          mv "$TAR_PATH" "./${{ env.PLUGIN_NAME }}.tar.gz"
 
       - name: Criar Release no GitHub
-        if: steps.vars.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.vars.outputs.version }}
-          name: "Project Flow ${{ steps.vars.outputs.version }}"
+          name: "${{ steps.vars.outputs.version }}"
           files: |
-            ${{ env.PLUGIN_NAME }}-${{ steps.vars.outputs.version }}.tar.gz
+            ${{ env.PLUGIN_NAME }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
