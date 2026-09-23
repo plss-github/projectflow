@@ -1,11 +1,11 @@
-# Validação do pacote 3.4.0
+# Validação do pacote 3.4.3
 
 ## Validações executadas no build
 
 - `php -l` em todos os arquivos PHP: **OK**.
-- `node --check public/js/projectflow-3.4.js`: **OK**.
+- `node --check public/js/projectflow-3.4.3.js`: **OK**.
 - parse do `composer.json`: **OK**.
-- balanço de delimitadores e blocos Twig dos sete templates: **OK**.
+- balanço de delimitadores e blocos Twig dos seis templates: **OK**.
 - verificação de templates usados pelos front controllers: **OK**.
 - verificação de endpoints AJAX usados pelos controllers: **OK**.
 - ausência do namespace/pasta reservada `src/Controller`: **OK**.
@@ -19,7 +19,12 @@
 - reuniões e snapshots semanais protegidos por transação: **OK**.
 - lembretes por grupo expandem membros e só confirmam envio após enfileiramento: **OK**.
 - atividades/estatísticas de tarefas ocultas não entram em agregações do plugin: **OK**.
-- teste de integridade do ZIP: executado na etapa final do release.
+- Minhas tarefas aplica o limite depois dos filtros e não depende do limite do portfólio: **OK** (revisão de código).
+- cron de lembretes ordena por tentativas e abandona lembrete sem destinatário após 24 tentativas: **OK** (revisão de código).
+- exclusão de horas exige a tarefa e só aceita lançamentos de execução: **OK**.
+- busca de ativos restringe entidade/lixeira/template no SQL: **OK**.
+- pacote de release com pasta raiz `projectflow/`: **OK** (workflow).
+- teste de integridade do pacote: executado na etapa final do release.
 
 ## Compatibilidade conferida contra GLPI 11.0.9
 
@@ -39,7 +44,7 @@ A implementação foi cruzada com as classes do core 11.0.9 usadas pelo plugin, 
 - reuniões e horas de reunião;
 - orçamento/saldo de horas;
 - cronograma semanal;
-- Assistência > Minhas tarefas (Minhas tarefas / Todas visíveis);
+- Projetos > Minhas tarefas (Minhas tarefas / Todas visíveis), sem entrada em Assistência;
 - tela individual da tarefa no layout operacional de Chamado;
 - menu interno da tarefa com Execuções, Reuniões, Subtarefas, Ativos, Documentos, Chamados, Dependências e Histórico;
 - lembrete visual e e-mail;

@@ -42,7 +42,7 @@
           <div class="col-md-6"><label class="form-label">Estado inicial de projetos</label><select class="form-select" name="default_project_state_id" required>{% for state in states %}<option value="{{ state.id }}" {{ state.id == default_project_state_id ? 'selected' : '' }}>{{ state.name }}</option>{% endfor %}</select><small class="text-muted">Projetos nunca são criados sem estado.</small></div>
           <div class="col-md-6"><label class="form-label">Estado inicial de tarefas</label><select class="form-select" name="default_task_state_id" required>{% for state in states %}<option value="{{ state.id }}" {{ state.id == default_task_state_id ? 'selected' : '' }}>{{ state.name }}</option>{% endfor %}</select><small class="text-muted">Toda tarefa nasce neste estado.</small></div>
           <div class="col-md-6"><label class="form-label">Modo padrão de execução</label><select class="form-select" name="default_execution_mode"><option value="direct" {{ default_execution_mode == 'direct' ? 'selected' : '' }}>Tarefa direta no projeto</option><option value="ticket" {{ default_execution_mode == 'ticket' ? 'selected' : '' }}>Tarefa + chamado</option></select></div>
-          <div class="col-md-6"><label class="form-label">Controle padrão</label><select class="form-select" name="default_cost_mode"><option value="hours" {{ default_cost_mode == 'hours' ? 'selected' : '' }}>Horas</option><option value="money" {{ default_cost_mode == 'money' ? 'selected' : '' }}>Monetário + horas</option></select></div>
+          <div class="col-md-6"><label class="form-label">Controle padrão</label><select class="form-select" name="default_cost_mode"><option value="hours" {{ default_cost_mode == 'hours' ? 'selected' : '' }}>Horas</option><option value="money" {{ default_cost_mode == 'money' ? 'selected' : '' }}>Custo financeiro</option></select></div>
         </div>
       </section>
 
@@ -62,6 +62,10 @@
           <label class="pf-switch-row">
             <div><strong>Mostrar estados finalizados no Kanban</strong><span>Mantém as colunas de conclusão visíveis na central de execução.</span></div>
             <input class="form-check-input" type="checkbox" name="show_finished_states" value="1" {{ show_finished_states ? 'checked' : '' }}>
+          </label>
+          <label class="pf-switch-row">
+            <div><strong>Abrir o Project Flow em Ferramentas &gt; Projetos</strong><span>O menu nativo Projetos passa a abrir o portfólio do Project Flow, sem uma entrada separada. A lista nativa continua acessível pelo botão "Lista nativa".</span></div>
+            <input class="form-check-input" type="checkbox" name="replace_native_projects_menu" value="1" {{ replace_native_projects_menu ? 'checked' : '' }}>
           </label>
           <label class="pf-switch-row">
             <div><strong>Cards compactos</strong><span>Reduz espaçamentos para ambientes com muitos projetos e tarefas.</span></div>
@@ -115,4 +119,119 @@
       <button class="btn btn-primary" type="submit"><i class="ti ti-device-floppy"></i> Salvar configurações</button>
     </div>
   </form>
+
+  <div id="projectflow-config-catalog" data-endpoint="{{ ajax_config_url }}" data-csrf="{{ csrf_token }}">
+
+    <section class="pf-panel mt-3 pf-catalog">
+      <div class="pf-panel-header">
+        <div><div class="pf-eyebrow">CADASTROS</div><h2>Estados de projetos e tarefas</h2><p class="mb-0">No GLPI, projetos e tarefas usam a mesma lista de estados. O percentual define o andamento ao mover a tarefa no Kanban; estados finalizados valem 100%.</p></div>
+      </div>
+      <div class="table-responsive"><table class="table pf-table pf-catalog-table">
+        <thead><tr><th>Estado</th><th class="text-end">% no Kanban</th><th>Tipo</th><th class="text-end">Em uso</th><th></th></tr></thead>
+        <tbody>
+          {% for state in catalog_states %}
+            <tr>
+              <td><span class="pf-catalog-dot" style="--pf-state-color:{{ state.color }}"></span><strong>{{ state.name }}</strong>{% if state.comment %}<small class="d-block text-muted">{{ state.comment }}</small>{% endif %}</td>
+              <td class="text-end">{{ state.progress }}%</td>
+              <td>{% if state.is_finished %}<span class="badge bg-green-lt">Finalizado</span>{% else %}<span class="badge bg-blue-lt">Em aberto</span>{% endif %}</td>
+              <td class="text-end">{{ state.usage }}</td>
+              <td class="text-end text-nowrap">
+                <button type="button" class="btn btn-sm btn-ghost-secondary pf-icon-btn" data-pf-catalog-edit="state" data-item="{{ {'id': state.id, 'name': state.name, 'color': state.color, 'percent': state.progress, 'is_finished': state.is_finished, 'comment': state.comment}|json_encode|e('html_attr') }}" title="Editar"><i class="ti ti-pencil"></i></button>
+                <button type="button" class="btn btn-sm btn-ghost-danger pf-icon-btn" data-pf-catalog-delete="state" data-id="{{ state.id }}" data-name="{{ state.name }}" title="{{ state.usage ? 'Em uso: troque o estado dos itens antes de excluir' : 'Excluir' }}" {{ state.usage ? 'disabled' : '' }}><i class="ti ti-trash"></i></button>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="text-muted">Nenhum estado cadastrado.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      <form class="pf-catalog-form" data-kind="state">
+        <input type="hidden" name="id" value="0">
+        <div class="pf-catalog-form-title" data-pf-form-title>Novo estado</div>
+        <div class="row g-2 align-items-end">
+          <div class="col-md-4"><label class="form-label">Nome *</label><input name="name" class="form-control" maxlength="255" required placeholder="Ex.: Em homologação"></div>
+          <div class="col-md-2 col-6"><label class="form-label">Cor</label><input type="color" name="color" class="form-control form-control-color w-100" value="#3b82f6"></div>
+          <div class="col-md-2 col-6"><label class="form-label">% no Kanban</label><div class="input-group"><input type="number" name="percent" class="form-control" min="0" max="100" step="5" value="0"><span class="input-group-text">%</span></div></div>
+          <div class="col-md-2"><label class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" name="is_finished" value="1"><span class="form-check-label">Finalizado</span></label></div>
+          <div class="col-md-2 text-md-end"><button type="button" class="btn btn-sm btn-outline-secondary d-none" data-pf-catalog-cancel>Cancelar</button> <button class="btn btn-primary" type="submit"><i class="ti ti-device-floppy"></i> Salvar</button></div>
+          <div class="col-12"><input name="comment" class="form-control form-control-sm" maxlength="2000" placeholder="Comentário (opcional)"></div>
+        </div>
+      </form>
+    </section>
+
+    <div class="pf-config-grid mt-3">
+      {% for kind in [{'key': 'project_type', 'title': 'Tipos de projeto', 'items': project_types, 'hint': 'Usados no campo Tipo do projeto.', 'placeholder': 'Ex.: Implantação'}, {'key': 'task_type', 'title': 'Tipos de tarefa', 'items': task_types, 'hint': 'Usados no campo Tipo das tarefas e dos templates.', 'placeholder': 'Ex.: Configuração'}] %}
+        <section class="pf-panel pf-config-card pf-catalog">
+          <div class="pf-panel-header"><div><div class="pf-eyebrow">CADASTROS</div><h2>{{ kind.title }}</h2><p class="mb-0">{{ kind.hint }}</p></div></div>
+          <ul class="pf-catalog-list">
+            {% for item in kind.items %}
+              <li>
+                <div><strong>{{ item.name }}</strong>{% if item.comment %}<small>{{ item.comment }}</small>{% endif %}</div>
+                <span class="pf-catalog-usage" title="Projetos/tarefas que usam este tipo">{{ item.usage }}</span>
+                <button type="button" class="btn btn-sm btn-ghost-secondary pf-icon-btn" data-pf-catalog-edit="{{ kind.key }}" data-item="{{ {'id': item.id, 'name': item.name, 'comment': item.comment}|json_encode|e('html_attr') }}" title="Editar"><i class="ti ti-pencil"></i></button>
+                <button type="button" class="btn btn-sm btn-ghost-danger pf-icon-btn" data-pf-catalog-delete="{{ kind.key }}" data-id="{{ item.id }}" data-name="{{ item.name }}" title="{{ item.usage ? 'Em uso' : 'Excluir' }}" {{ item.usage ? 'disabled' : '' }}><i class="ti ti-trash"></i></button>
+              </li>
+            {% else %}
+              <li class="text-muted">Nenhum tipo cadastrado.</li>
+            {% endfor %}
+          </ul>
+          <form class="pf-catalog-form" data-kind="{{ kind.key }}">
+            <input type="hidden" name="id" value="0">
+            <div class="pf-catalog-form-title" data-pf-form-title>Novo tipo</div>
+            <div class="row g-2 align-items-end">
+              <div class="col-sm-5"><input name="name" class="form-control" maxlength="255" required placeholder="{{ kind.placeholder }}"></div>
+              <div class="col-sm-4"><input name="comment" class="form-control" maxlength="2000" placeholder="Comentário (opcional)"></div>
+              <div class="col-sm-3 text-sm-end"><button type="button" class="btn btn-sm btn-outline-secondary d-none" data-pf-catalog-cancel>Cancelar</button> <button class="btn btn-primary" type="submit"><i class="ti ti-plus"></i> Salvar</button></div>
+            </div>
+          </form>
+        </section>
+      {% endfor %}
+    </div>
+
+    <section class="pf-panel mt-3 pf-catalog">
+      <div class="pf-panel-header">
+        <div><div class="pf-eyebrow">AUTOMAÇÃO</div><h2>Regras por andamento</h2><p class="mb-0">Quando o andamento de uma tarefa muda, a primeira regra ativa cuja faixa contém o novo percentual define o estado da tarefa. As notificações são enviadas ao entrar na faixa. Mover a tarefa no Kanban não troca o estado por regra, só notifica.</p></div>
+      </div>
+      <div class="table-responsive"><table class="table pf-table pf-catalog-table">
+        <thead><tr><th>Ordem</th><th>Regra</th><th>Faixa</th><th>Estado de destino</th><th>Notificar</th><th>Ativa</th><th></th></tr></thead>
+        <tbody>
+          {% for rule in rules %}
+            <tr class="{{ rule.is_active ? '' : 'text-muted' }}">
+              <td>{{ rule.ranking }}</td>
+              <td><strong>{{ rule.name }}</strong></td>
+              <td>{{ rule.min_percent }}% a {{ rule.max_percent }}%</td>
+              <td>{% if rule.state %}<span class="pf-catalog-dot" style="--pf-state-color:{{ rule.state.color }}"></span>{{ rule.state.name }}{% else %}<span class="text-muted">Não altera</span>{% endif %}</td>
+              <td>{% set targets = [] %}{% if rule.notify_requester %}{% set targets = targets|merge(['Solicitante']) %}{% endif %}{% if rule.notify_manager %}{% set targets = targets|merge(['Gestor do projeto']) %}{% endif %}{% if rule.notify_team %}{% set targets = targets|merge(['Executores']) %}{% endif %}{% if rule.group_name %}{% set targets = targets|merge([rule.group_name]) %}{% endif %}{{ targets ? targets|join(', ') : '—' }}</td>
+              <td>{{ rule.is_active ? 'Sim' : 'Não' }}</td>
+              <td class="text-end text-nowrap">
+                <button type="button" class="btn btn-sm btn-ghost-secondary pf-icon-btn" data-pf-rule-edit data-item="{{ rule|json_encode|e('html_attr') }}" title="Editar"><i class="ti ti-pencil"></i></button>
+                <button type="button" class="btn btn-sm btn-ghost-danger pf-icon-btn" data-pf-rule-delete data-id="{{ rule.id }}" data-name="{{ rule.name }}" title="Excluir"><i class="ti ti-trash"></i></button>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7" class="text-muted">Nenhuma regra. Exemplo: 1% a 99% → Em andamento; 100% → Concluído, notificando o solicitante.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      <form class="pf-catalog-form" id="pf-rule-form">
+        <input type="hidden" name="id" value="0">
+        <div class="pf-catalog-form-title" data-pf-form-title>Nova regra</div>
+        <div class="row g-2 align-items-end">
+          <div class="col-md-3"><label class="form-label">Nome</label><input name="name" class="form-control" maxlength="190" placeholder="Ex.: Concluir ao chegar em 100%"></div>
+          <div class="col-md-2 col-6"><label class="form-label">De</label><div class="input-group"><input type="number" name="min_percent" class="form-control" min="0" max="100" value="100" required><span class="input-group-text">%</span></div></div>
+          <div class="col-md-2 col-6"><label class="form-label">Até</label><div class="input-group"><input type="number" name="max_percent" class="form-control" min="0" max="100" value="100" required><span class="input-group-text">%</span></div></div>
+          <div class="col-md-3"><label class="form-label">Mudar estado para</label><select name="projectstates_id" class="form-select"><option value="0">Não alterar o estado</option>{% for state in catalog_states %}<option value="{{ state.id }}">{{ state.name }}</option>{% endfor %}</select></div>
+          <div class="col-md-2 col-6"><label class="form-label">Ordem</label><input type="number" name="ranking" class="form-control" min="0" value="0"></div>
+          <div class="col-md-7"><label class="form-label d-block">Notificar por e-mail</label>
+            <label class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="notify_requester" value="1"><span class="form-check-label">Solicitante</span></label>
+            <label class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="notify_manager" value="1"><span class="form-check-label">Gestor do projeto</span></label>
+            <label class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="notify_team" value="1"><span class="form-check-label">Executores da tarefa</span></label>
+          </div>
+          <div class="col-md-3"><label class="form-label">E também o grupo</label><select name="notify_groups_id" class="form-select"><option value="0">Nenhum</option>{% for group in groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></div>
+          <div class="col-md-2"><label class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" name="is_active" value="1" checked><span class="form-check-label">Ativa</span></label></div>
+          <div class="col-12 text-end"><button type="button" class="btn btn-sm btn-outline-secondary d-none" data-pf-catalog-cancel>Cancelar</button> <button class="btn btn-primary" type="submit"><i class="ti ti-device-floppy"></i> Salvar regra</button></div>
+        </div>
+      </form>
+    </section>
+  </div>
 </div>

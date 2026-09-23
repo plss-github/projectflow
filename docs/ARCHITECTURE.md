@@ -22,7 +22,7 @@ Portfólio
      -> Relatório semanal
 ```
 
-O técnico pode pular a navegação do projeto e entrar diretamente por `Assistência > Minhas tarefas`.
+O técnico pode pular a navegação do projeto e entrar diretamente por o botão **Minhas tarefas** do portfólio.
 
 ## Fonte de verdade nativa
 
@@ -157,7 +157,7 @@ Não existe dependência de IA na versão 3.0.
 
 1. Não escrever diretamente em `glpi_projects` ou `glpi_projecttasks`.
 2. Não duplicar cadastro de projeto/tarefa.
-3. Fluxo diário do técnico deve caber em `Assistência -> Minhas tarefas -> Tarefa`.
+3. Fluxo diário do técnico deve caber em `Projetos -> Minhas tarefas -> Tarefa`.
 4. Fluxo gerencial deve caber no workspace do projeto.
 5. Reunião é alinhamento; tarefa é execução.
 6. Horas são o indicador operacional principal.
@@ -165,8 +165,6 @@ Não existe dependência de IA na versão 3.0.
 8. Recursos nativos do GLPI permanecem utilizáveis se o plugin for desativado.
 
 
-## Integração com o menu Assistência
+## Integração com o menu do GLPI
 
-A operação diária não depende do workspace do projeto. O plugin registra `AssistanceMenu` na categoria `helpdesk` e direciona **Assistência > Minhas tarefas** para a fila de `ProjectTask` ativas do usuário e de seus grupos. A tela individual mantém a mesma `ProjectTask` usada pelo Kanban e pelo Planejamento; não existe uma tarefa paralela no plugin.
-
-A página individual é dividida em navegação contextual, processamento e painel de controle/atores. Dados nativos continuam sendo alterados pelas classes do GLPI; o plugin persiste apenas informações sem estrutura nativa adequada, como solicitante operacional, atenção, atividades, horas e reuniões.
+**Ferramentas > Projetos** abre o portfólio do Project Flow pelo hook `redefine_menus`, e `/front/project.php` sem parâmetros é redirecionado. A lista nativa fica no botão **Lista nativa**. O comportamento é controlado pela opção `replace_native_projects_menu`. Não há entrada em Assistência: a fila **Minhas tarefas** abre pelo portfólio e mostra as `ProjectTask` ativas do usuário e de seus grupos. A tela individual usa a mesma `ProjectTask` do Kanban e do Planejamento.

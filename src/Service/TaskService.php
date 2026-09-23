@@ -60,7 +60,7 @@ class TaskService
             $task = new ProjectTask();
             $task->getFromResultSet($row);
             $id = (int) $row['id'];
-            $normalized = $this->normalizeTask($row, $states, $task->canUpdateItem(), $types, $metas[$id] ?? $this->meta->getTaskMeta($id));
+            $normalized = $this->normalizeTask($row, $states, $task->canUpdateItem(), $types, $metas[$id] ?? $this->meta->getTaskMetaDefaults());
             $normalized['team_summary'] = $teamSummary[$id] ?? [];
             $tasks[] = $normalized;
         }
@@ -110,7 +110,8 @@ class TaskService
         $name = mb_substr(trim(strip_tags((string) ($input['name'] ?? ''))), 0, 255);
         if ($name === '') return false;
         $projectMeta = $this->meta->getForProject($projectId);
-        $ticketMode = (($projectMeta['execution_mode'] ?? 'direct') === 'ticket');
+        // Tasks stored in a template are only a blueprint: tickets are opened for real projects.
+        $ticketMode = (($projectMeta['execution_mode'] ?? 'direct') === 'ticket') && empty($project->fields['is_template']);
         if ($ticketMode && !Session::haveRight(Ticket::$rightname, CREATE)) return false;
         $stateId = (int) ($input['projectstates_id'] ?? Config::int('default_task_state_id', 0));
         if ($stateId <= 0) $stateId = $this->firstOpenStateId();
@@ -122,6 +123,7 @@ class TaskService
         if ($parent > 0 && !$this->isTaskInProject($parent, $projectId)) return false;
         $milestone = !empty($input['is_milestone']);
         if ($milestone && $start) $end = $start;
+        if (!$this->validRequester($input)) return false;
 
         $percent = max(0, min(100, (int) ($input['percent_done'] ?? 0)));
         if (Config::bool('auto_progress_on_kanban', true) && $stateId > 0) {
@@ -147,7 +149,7 @@ class TaskService
         $id = (new ProjectTask())->add($payload);
         if (!$id) return false;
         $taskMetaInput = $input;
-        if (!array_key_exists('requester_users_id', $taskMetaInput)) {
+        if (!array_key_exists('requester_users_id', $taskMetaInput) || (int) $taskMetaInput['requester_users_id'] <= 0) {
             $taskMetaInput['requester_users_id'] = (int) Session::getLoginUserID();
         }
         $this->meta->saveTaskMeta((int) $id, $taskMetaInput);
@@ -205,13 +207,7 @@ class TaskService
         if (array_key_exists('plan_start_date', $input)) $payload['plan_start_date'] = $this->date($input['plan_start_date']);
         if (array_key_exists('plan_end_date', $input)) $payload['plan_end_date'] = $this->date($input['plan_end_date']);
         if (array_key_exists('planned_duration_hours', $input) || array_key_exists('planned_duration', $input)) $payload['planned_duration'] = $this->plannedDuration($input);
-        if (array_key_exists('requester_users_id', $input)) {
-            $requesterId = max(0, (int) $input['requester_users_id']);
-            if ($requesterId > 0) {
-                $requester = new User();
-                if (!$requester->getFromDB($requesterId) || !$requester->canViewItem()) return false;
-            }
-        }
+        if (!$this->validRequester($input)) return false;
 
         $start = $payload['plan_start_date'] ?? ($task->fields['plan_start_date'] ?? null);
         $end = $payload['plan_end_date'] ?? ($task->fields['plan_end_date'] ?? null);
@@ -398,12 +394,7 @@ class TaskService
     {
         global $DB;
         if (!ProjectTask::canView()) return [];
-
-        $projects = (new ProjectService())->getAccessibleProjects(1000);
-        if (!$projects) return [];
-        $projectMap = [];
-        foreach ($projects as $project) $projectMap[(int) $project['id']] = $project;
-        $projectIds = array_keys($projectMap);
+        $limit = max(1, min($limit, 5000));
 
         $mine = [];
         $uid = (int) Session::getLoginUserID();
@@ -413,26 +404,59 @@ class TaskService
                 if ($id > 0) $mine[$id] = true;
             }
         }
+        if ($mineOnly && $mine === []) return [];
 
-        $rows = [];
-        foreach ($DB->request([
-            'FROM' => ProjectTask::getTable(),
-            'WHERE' => ['projects_id' => $projectIds, 'is_deleted' => 0, 'is_template' => 0],
-            'ORDERBY' => ['plan_end_date ASC', 'id DESC'],
-            'LIMIT' => max(1, min($limit, 5000)),
-        ]) as $row) {
-            $id = (int) $row['id'];
-            if ($mineOnly && !isset($mine[$id])) continue;
-            $task = new ProjectTask();
-            $task->getFromResultSet($row);
-            if (!$task->canViewItem()) continue;
-            $rows[] = $row;
+        // Resolve project visibility without the portfolio display cap. In "mine" scope only
+        // the projects that actually own the user's tasks are loaded, so the queue never loses
+        // tasks because a project is older than the N most recently modified projects.
+        $where = ['is_deleted' => 0, 'is_template' => 0];
+        $projectService = new ProjectService();
+        if ($mineOnly) {
+            $where['id'] = array_keys($mine);
+            $projectIds = [];
+            foreach ($DB->request(['SELECT' => ['projects_id'], 'DISTINCT' => true, 'FROM' => ProjectTask::getTable(), 'WHERE' => $where]) as $row) {
+                $projectIds[] = (int) $row['projects_id'];
+            }
+            $projectMap = $projectService->getAccessibleProjectIndex($projectIds);
+        } else {
+            $projectMap = $projectService->getAccessibleProjectIndex(null);
         }
+        if ($projectMap === []) return [];
+        $where['projects_id'] = array_keys($projectMap);
+
+        $states = $this->references->getStateMap();
+        $defaultStateId = Config::int('default_task_state_id', $this->firstOpenStateId());
+
+        // Filters are applied while reading and the limit is enforced on the filtered result,
+        // never on the raw SQL result set.
+        $rows = [];
+        $offset = 0;
+        $chunk = 500;
+        do {
+            $batch = 0;
+            foreach ($DB->request([
+                'FROM' => ProjectTask::getTable(),
+                'WHERE' => $where,
+                'ORDERBY' => ['plan_end_date ASC', 'id DESC'],
+                'START' => $offset,
+                'LIMIT' => $chunk,
+            ]) as $row) {
+                $batch++;
+                $stateId = (int) ($row['projectstates_id'] ?? 0);
+                if ($stateId <= 0) $stateId = $defaultStateId;
+                if (!$includeFinished && !empty($states[$stateId]['is_finished'])) continue;
+                $task = new ProjectTask();
+                $task->getFromResultSet($row);
+                if (!$task->canViewItem()) continue;
+                $rows[] = $row;
+                if (count($rows) >= $limit) break 2;
+            }
+            $offset += $chunk;
+        } while ($batch === $chunk);
 
         $ids = array_map(static fn(array $row): int => (int) $row['id'], $rows);
         $metas = $this->meta->getTaskMetas($ids);
         $teams = $this->getTeamSummaries($ids);
-        $states = $this->references->getStateMap();
         $types = [];
         foreach ($this->references->getTaskTypes() as $type) $types[$type['id']] = $type['name'];
 
@@ -444,8 +468,7 @@ class TaskService
             if (!$project) continue;
             $taskObj = new ProjectTask();
             $taskObj->getFromResultSet($row);
-            $normalized = $this->normalizeTask($row, $states, $taskObj->canUpdateItem(), $types, $metas[$id] ?? $this->meta->getTaskMeta($id));
-            if (!$includeFinished && !empty($normalized['state']['is_finished'])) continue;
+            $normalized = $this->normalizeTask($row, $states, $taskObj->canUpdateItem(), $types, $metas[$id] ?? $this->meta->getTaskMetaDefaults());
             $normalized['team_summary'] = $teams[$id] ?? [];
             $normalized['is_mine'] = isset($mine[$id]);
             $normalized['project_name'] = (string) ($project['name'] ?? ('Projeto #' . $projectId));
@@ -475,11 +498,6 @@ class TaskService
             if ((int) ($task['parent_id'] ?? 0) === $taskId) $items[] = $task;
         }
         return $items;
-    }
-
-    public function getMyTasks(): array
-    {
-        return $this->getTaskCenterTasks(true, false);
     }
 
     public function getBoard(array $tasks, bool $showFinished = true): array
@@ -662,7 +680,7 @@ class TaskService
             $id = (int) $row['items_id'];
             $key = $type . ':' . $id;
             if (isset($cache[$key])) $name = $cache[$key];
-            elseif ($type === User::class) $name = getUserName($id);
+            elseif ($type === User::class) $name = self::userName($id);
             elseif ($type === Group::class) $name = Dropdown::getDropdownName(Group::getTable(), $id);
             elseif ($type === Supplier::class) $name = Dropdown::getDropdownName(Supplier::getTable(), $id);
             elseif ($type === Contact::class) { $item = new Contact(); $name = $item->getFromDB($id) ? $item->getName() : ('Contato #' . $id); }
@@ -726,7 +744,7 @@ class TaskService
             'priority' => $priority,
             'priority_name' => CommonITILObject::getPriorityName($priority),
             'requester_user_id' => $requesterId,
-            'requester_name' => $requesterId > 0 ? getUserName($requesterId) : 'Não definido',
+            'requester_name' => $requesterId > 0 ? self::userName($requesterId) : 'Não definido',
             'attention' => !empty($meta['attention']),
             'attention_note' => (string) ($meta['attention_note'] ?? ''),
             'reminder_at' => $meta['reminder_at'] ?? null,
@@ -747,10 +765,18 @@ class TaskService
             'is_milestone' => (bool) ($row['is_milestone'] ?? false),
             'is_overdue' => (bool) $isOverdue,
             'can_update' => $canUpdate,
-            'creator_name' => !empty($row['users_id']) ? getUserName((int) $row['users_id']) : '',
+            'creator_name' => !empty($row['users_id']) ? self::userName((int) $row['users_id']) : '',
             'date_mod' => $row['date_mod'] ?? null,
             'task_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/task.php?id=' . (int) $row['id'],
         ];
+    }
+
+    /** @var array<int,string> */
+    private static array $userNames = [];
+
+    private static function userName(int $id): string
+    {
+        return self::$userNames[$id] ??= (string) getUserName($id);
     }
 
     private function progressForState(int $stateId, int $fallback): int
@@ -768,6 +794,16 @@ class TaskService
             return (int) round($hours * 3600);
         }
         return max(0, (int) ($input['planned_duration'] ?? 0));
+    }
+
+    /** Same requester rule for create and update: an explicit requester must be a visible user. */
+    private function validRequester(array $input): bool
+    {
+        if (!array_key_exists('requester_users_id', $input)) return true;
+        $requesterId = max(0, (int) $input['requester_users_id']);
+        if ($requesterId === 0 || $requesterId === (int) Session::getLoginUserID()) return true;
+        $requester = new User();
+        return $requester->getFromDB($requesterId) && $requester->canViewItem();
     }
 
     private function isTaskInProject(int $taskId, int $projectId): bool

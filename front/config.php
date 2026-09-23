@@ -1,11 +1,12 @@
 <?php
 
-use Glpi\Application\View\TemplateRenderer;
 use GlpiPlugin\Projectflow\Config;
+use GlpiPlugin\Projectflow\Service\CatalogService;
 use GlpiPlugin\Projectflow\Service\MetaService;
+use GlpiPlugin\Projectflow\Service\ProgressRuleService;
 use GlpiPlugin\Projectflow\Service\ReferenceService;
 
-include('../../../inc/includes.php');
+
 Session::checkLoginUser();
 if (!Session::haveRight('config', UPDATE)) {
     Html::displayRightError();
@@ -16,7 +17,8 @@ $refs = new ReferenceService();
 $meta = new MetaService();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    Session::checkCSRF($_POST);
+    // CSRF is already validated (and the token consumed) by GLPI 11's kernel
+    // (CheckCsrfListener) for every non-AJAX POST; a second check here always fails.
     Config::set('dashboard_limit', (string) max(25, min(1000, (int) ($_POST['dashboard_limit'] ?? 250))));
     Config::set('show_finished_states', !empty($_POST['show_finished_states']) ? '1' : '0');
     Config::set('compact_cards', !empty($_POST['compact_cards']) ? '1' : '0');
@@ -37,6 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Config::set('default_execution_mode', in_array(($_POST['default_execution_mode']??'direct'),['direct','ticket'],true)?(string)$_POST['default_execution_mode']:'direct');
     Config::set('default_cost_mode', in_array(($_POST['default_cost_mode']??'hours'),['hours','money'],true)?(string)$_POST['default_cost_mode']:'hours');
     Config::set('reminder_email_enabled', !empty($_POST['reminder_email_enabled'])?'1':'0');
+    Config::set('replace_native_projects_menu', !empty($_POST['replace_native_projects_menu'])?'1':'0');
+    unset($_SESSION['glpimenu']); // rebuild the GLPI menu with the new setting
 
     foreach ((array) ($_POST['state_progress'] ?? []) as $stateId => $percent) {
         $stateId = (int) $stateId;
@@ -45,9 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     Session::addMessageAfterRedirect('Configurações do Project Flow salvas.', true, INFO);
-    Html::redirect($_SERVER['PHP_SELF']);
+    // GLPI 11 routes every request through public/index.php, so PHP_SELF is /index.php.
+    Html::redirect(PLUGIN_PROJECTFLOW_WEBDIR . '/front/config.php');
 }
 
+ProgressRuleService::ensureTable();
+$catalog = new CatalogService();
 $stateProgress = $meta->getStateProgressMap();
 $states = $refs->getProjectStates();
 foreach ($states as &$state) {
@@ -55,8 +62,9 @@ foreach ($states as &$state) {
 }
 unset($state);
 
-Html::header('Project Flow - Configurações', $_SERVER['PHP_SELF'], 'tools', GlpiPlugin\Projectflow\Menu::class);
-TemplateRenderer::getInstance()->display('@projectflow/config.html.twig', [
+plugin_projectflow_register_assets();
+Html::header('Project Flow - Configurações', $_SERVER['PHP_SELF'], 'tools',plugin_projectflow_header_item());
+plugin_projectflow_display('config.html.twig', [
     'dashboard_limit' => Config::int('dashboard_limit', 250),
     'show_finished_states' => Config::bool('show_finished_states', true),
     'compact_cards' => Config::bool('compact_cards'),
@@ -69,7 +77,14 @@ TemplateRenderer::getInstance()->display('@projectflow/config.html.twig', [
     'default_execution_mode'=>(string)Config::get('default_execution_mode','direct'),
     'default_cost_mode'=>(string)Config::get('default_cost_mode','hours'),
     'reminder_email_enabled'=>Config::bool('reminder_email_enabled',true),
+    'replace_native_projects_menu'=>Config::bool('replace_native_projects_menu',true),
     'states' => $states,
+    'catalog_states' => array_map(static fn(array $s): array => $s + ['progress' => $s['is_finished'] ? 100 : ($stateProgress[$s['id']] ?? 0)], $catalog->list('state')),
+    'project_types' => $catalog->list('project_type'),
+    'task_types' => $catalog->list('task_type'),
+    'rules' => (new ProgressRuleService())->list(),
+    'groups' => $refs->getGroups(),
+    'ajax_config_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/ajax/config.php',
     'csrf_token' => Session::getNewCSRFToken(),
 ]);
 Html::footer();

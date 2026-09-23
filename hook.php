@@ -55,6 +55,7 @@ function plugin_projectflow_install(): bool
             `reminder_email` TINYINT(1) NOT NULL DEFAULT 1,
             `reminder_browser` TINYINT(1) NOT NULL DEFAULT 1,
             `reminder_sent_at` DATETIME NULL,
+            `reminder_attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
             `date_mod` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             UNIQUE KEY `uniq_task` (`projecttasks_id`),
@@ -70,6 +71,7 @@ function plugin_projectflow_install(): bool
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_email', "TINYINT(1) NOT NULL DEFAULT 1");
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_browser', "TINYINT(1) NOT NULL DEFAULT 1");
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_sent_at', 'DATETIME NULL');
+        projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_attempts', 'TINYINT UNSIGNED NOT NULL DEFAULT 0');
     }
 
     if (!$DB->tableExists('glpi_plugin_projectflow_stateprogress')) {
@@ -181,6 +183,8 @@ function plugin_projectflow_install(): bool
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC");
     }
 
+    \GlpiPlugin\Projectflow\Service\ProgressRuleService::ensureTable();
+
     $states = [];
     if ($DB->tableExists('glpi_projectstates')) {
         foreach ($DB->request([
@@ -211,14 +215,16 @@ function plugin_projectflow_install(): bool
         'default_task_state_id' => (string) $firstOpenState,
         'default_execution_mode' => 'direct',
         'default_cost_mode' => 'hours',
-        'weekly_sprint_start' => 'monday',
         'reminder_email_enabled' => '1',
+        'replace_native_projects_menu' => '1',
     ];
     foreach ($defaults as $name => $value) {
         if (countElementsInTable('glpi_plugin_projectflow_configs', ['name' => $name]) === 0) {
             $DB->insert('glpi_plugin_projectflow_configs', ['name' => $name, 'value' => $value]);
         }
     }
+    // Options that were never implemented and are no longer read by the plugin.
+    $DB->delete('glpi_plugin_projectflow_configs', ['name' => ['weekly_sprint_start']]);
 
     $unfinished = array_values(array_filter($states, static fn(array $state): bool => !$state['finished']));
     $unfinishedCount = count($unfinished);
@@ -273,6 +279,7 @@ function plugin_projectflow_uninstall(): bool
 
     CronTask::unregister('projectflow');
     foreach ([
+        'glpi_plugin_projectflow_progressrules',
         'glpi_plugin_projectflow_weeklyreports',
         'glpi_plugin_projectflow_taskassets',
         'glpi_plugin_projectflow_meetings',
@@ -335,5 +342,21 @@ function plugin_projectflow_item_purge(CommonDBTM $item): void
                 $DB->delete($table, $where);
             }
         }
+    }
+}
+
+
+/**
+ * Apply progress rules after a native ProjectTask update.
+ */
+function plugin_projectflow_item_update(CommonDBTM $item): void
+{
+    if (!$item instanceof ProjectTask) {
+        return;
+    }
+    try {
+        (new \GlpiPlugin\Projectflow\Service\ProgressRuleService())->onTaskUpdated($item);
+    } catch (\Throwable $e) {
+        \Toolbox::logError('[Project Flow] item_update: ' . $e->getMessage());
     }
 }

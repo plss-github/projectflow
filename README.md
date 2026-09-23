@@ -1,4 +1,4 @@
-# Project Flow 3.4.0 para GLPI 11
+# Project Flow 3.4.3 para GLPI 11
 
 Project Flow é uma camada operacional de gestão de projetos para **GLPI 11.x**, desenhada para reduzir a complexidade do módulo nativo sem substituir seus objetos principais. Projeto, tarefa, equipe, estados, planejamento, chamados, documentos, contratos e permissões continuam integrados ao GLPI; o plugin acrescenta a experiência de trabalho que faltava para gestores e executores.
 
@@ -32,8 +32,8 @@ A linha 3.x foi redesenhada a partir do fluxo real de trabalho da equipe: **proj
 - Prioridade, prazo, executores, ponto de atenção e lembrete no card.
 - Botão **Nova tarefa** somente dentro da área de execução.
 
-### Assistência > Minhas tarefas e tela operacional
-O técnico não precisa entrar no projeto para executar o trabalho. O plugin adiciona **Minhas tarefas** diretamente ao menu **Assistência** do GLPI. Essa fila exibe as tarefas de projeto atribuídas ao usuário ou aos seus grupos e permite alternar entre **Minhas tarefas** e **Todas as visíveis**.
+### Minhas tarefas e tela operacional
+O técnico não precisa entrar em cada projeto para executar o trabalho: o botão **Minhas tarefas**, no portfólio (Ferramentas > Projetos), abre a fila de execução. Essa fila exibe as tarefas de projeto atribuídas ao usuário ou aos seus grupos e permite alternar entre **Minhas tarefas** e **Todas as visíveis**.
 
 Ao abrir uma tarefa, a tela segue a organização do formulário de chamado do GLPI: menu operacional à esquerda, processamento no centro e ficha/atores à direita. O menu interno contém **Tarefa, Execuções, Reuniões, Tarefas (subtarefas), Ativos, Documentos, Chamados, Dependências e Histórico**. A tela 3.4 usa um workspace dedicado inspirado diretamente no formulário nativo de chamados do GLPI 11: navegação vertical fixa à esquerda, conversa no centro, propriedades em linhas à direita e barra inferior **Responder** com menu rápido para comentário, execução e reunião. Os assets e o template da tarefa são versionados para evitar reaproveitamento de cache da interface anterior:
 
@@ -55,7 +55,7 @@ Ao abrir uma tarefa, a tela segue a organização do formulário de chamado do G
 - solicitante da tarefa separado dos executores.
 
 ### Fila diária do técnico
-Dentro de **Assistência > Minhas tarefas**, o escopo padrão é a fila dedicada ao executor, baseada nas tarefas ativas nativas do GLPI para o usuário e seus grupos:
+Dentro de **Minhas tarefas**, o escopo padrão é a fila dedicada ao executor, baseada nas tarefas ativas nativas do GLPI para o usuário e seus grupos:
 
 - atrasadas;
 - vencendo hoje;
@@ -106,7 +106,7 @@ A aba **Relatório semanal** consolida uma semana selecionada e gera texto pront
 - horas da semana;
 - consumo acumulado do orçamento de horas, quando configurado.
 
-Versões do relatório podem ser salvas como snapshots no Project Flow. A versão 3.3 não depende de IA externa; uma futura integração com cloud/IA pode substituir ou complementar o gerador determinístico sem alterar o modelo de dados.
+Versões do relatório podem ser salvas como snapshots no Project Flow. A linha 3.x não depende de IA externa; uma futura integração com cloud/IA pode substituir ou complementar o gerador determinístico sem alterar o modelo de dados.
 
 ### Contrato x documentos
 - **Contrato**: vínculo com um `Contract` já existente no GLPI.
@@ -163,7 +163,7 @@ Desativar o plugin não exclui os projetos/tarefas nativos. **Desinstalar** remo
 4. Acesse **Configurar -> Plugins**.
 5. Instale/atualize **Project Flow**.
 6. Ative o plugin.
-7. Acesse **Ferramentas -> Project Flow**.
+7. Acesse **Ferramentas -> Projetos** (abre o Project Flow; a lista nativa fica no botão **Lista nativa**).
 8. Em **Configurações**, revise obrigatoriamente:
    - estado inicial de projeto;
    - estado inicial de tarefa;
