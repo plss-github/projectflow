@@ -1,15 +1,15 @@
 # Build information
 
 - Plugin: Project Flow
-- Version: 3.4.3
+- Version: 3.5.0
 - Build date: 2026-09-23
 - Target: GLPI 11.0.x / PHP 8.2+
-- Assets: `public/css/projectflow-3.4.3.css`, `public/js/projectflow-3.4.3.js`
+- Assets: `public/css/projectflow-3.5.0.css`, `public/js/projectflow-3.5.0.js`
 
 ## Build checks
 
 - PHP syntax check (`php -l`) on every PHP file.
-- JavaScript syntax check on `public/js/projectflow-3.4.3.js`.
+- JavaScript syntax check on `public/js/projectflow-3.5.0.js`.
 - `composer.json` JSON parse.
 - Release package contains the top-level `projectflow/` folder.
 

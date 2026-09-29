@@ -1,9 +1,9 @@
-# Validação do pacote 3.4.3
+# Validação do pacote 3.5.0
 
 ## Validações executadas no build
 
 - `php -l` em todos os arquivos PHP: **OK**.
-- `node --check public/js/projectflow-3.4.3.js`: **OK**.
+- `node --check public/js/projectflow-3.5.0.js`: **OK**.
 - parse do `composer.json`: **OK**.
 - balanço de delimitadores e blocos Twig dos seis templates: **OK**.
 - verificação de templates usados pelos front controllers: **OK**.
