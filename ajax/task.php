@@ -46,12 +46,19 @@ try {
 
         case 'create':
             $projectId = (int)($input['project_id'] ?? 0);
+            if (trim((string)($input['allowed_states'] ?? '')) !== '' && !$service->canManageAllowedStatesOnCreate($projectId, (int)($input['assignee_user_id'] ?? Session::getLoginUserID()))) {
+                projectflow_task_json_response(false, ['message' => 'O executor da tarefa não pode definir os estados permitidos. Escolha outro executor ou deixe todos os estados marcados.'], 403);
+            }
             $id = $service->create($projectId, $input);
             if (!$id) projectflow_task_json_response(false, ['message' => 'Não foi possível criar a tarefa.'], 400);
             projectflow_task_json_response(true, ['id' => $id, 'message' => 'Tarefa criada com sucesso.']);
 
         case 'update':
             $id = (int)($input['id'] ?? 0);
+            if ($id > 0 && array_key_exists('allowed_states', $input) && !$service->canManageAllowedStates($id)
+                && \GlpiPlugin\Projectflow\Service\MetaService::normalizeStateIdsForCompare($input['allowed_states']) !== \GlpiPlugin\Projectflow\Service\MetaService::normalizeStateIdsForCompare((new \GlpiPlugin\Projectflow\Service\MetaService())->getAllowedStateIds($id))) {
+                projectflow_task_json_response(false, ['message' => 'Somente a gestão do projeto pode alterar os estados permitidos desta tarefa.'], 403);
+            }
             if ($id <= 0 || !$service->update($id, $input)) projectflow_task_json_response(false, ['message' => 'Não foi possível atualizar a tarefa.'], 400);
             projectflow_task_json_response(true, ['id' => $id, 'message' => 'Tarefa atualizada.']);
 
@@ -106,6 +113,10 @@ try {
         case 'worklog_add':
             $taskId=(int)($input['task_id']??0);$id=(new WorklogService())->addTaskLog($taskId,$input);if(!$id)projectflow_task_json_response(false,['message'=>'Informe uma duração válida e verifique suas permissões.'],400);
             projectflow_task_json_response(true,['id'=>$id,'worklogs'=>(new WorklogService())->getForTask($taskId),'message'=>'Horas registradas.']);
+
+        case 'worklog_update':
+            $taskId=(int)($input['task_id']??0);if($taskId<=0||!(new WorklogService())->update((int)($input['worklog_id']??0),$taskId,$input))projectflow_task_json_response(false,['message'=>'Não foi possível salvar o lançamento. Informe uma duração válida e verifique se o lançamento é seu.'],400);
+            projectflow_task_json_response(true,['worklogs'=>(new WorklogService())->getForTask($taskId),'message'=>'Lançamento atualizado.']);
 
         case 'worklog_delete':
             $taskId=(int)($input['task_id']??0);if($taskId<=0||!(new WorklogService())->delete((int)($input['worklog_id']??0),$taskId))projectflow_task_json_response(false,['message'=>'Não foi possível remover o lançamento.'],400);

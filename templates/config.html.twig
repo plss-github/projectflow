@@ -1,16 +1,16 @@
 <div class="pf-app">
-  <section class="pf-hero pf-hero-dashboard">
-    <div>
-      <div class="pf-eyebrow">ADMINISTRAÇÃO</div>
-      <h1>Configurações do Project Flow</h1>
-      <p>Defina como o fluxo visual conversa com os projetos e tarefas nativos do GLPI.</p>
-    </div>
-  </section>
+  <nav class="pf-config-tabs" role="tablist" aria-label="Configurações do Project Flow">
+    <button type="button" data-pf-config-tab="general" class="is-active"><i class="ti ti-adjustments"></i> Geral</button>
+    <button type="button" data-pf-config-tab="states"><i class="ti ti-circle-dot"></i> Estados</button>
+    <button type="button" data-pf-config-tab="types"><i class="ti ti-category"></i> Tipos</button>
+    <button type="button" data-pf-config-tab="rules"><i class="ti ti-bolt"></i> Regras por andamento</button>
+    <button type="button" data-pf-config-tab="ai"><i class="ti ti-sparkles"></i> Inteligência artificial</button>
+  </nav>
 
   <form method="post">
     <input type="hidden" name="_glpi_csrf_token" value="{{ csrf_token }}">
 
-    <div class="pf-config-grid">
+    <div class="pf-config-grid" data-pf-config-pane="general">
       <section class="pf-panel pf-config-card">
         <div class="pf-panel-header">
           <div><div class="pf-eyebrow">PORTFÓLIO</div><h2>Visualização</h2></div>
@@ -42,7 +42,7 @@
           <div class="col-md-6"><label class="form-label">Estado inicial de projetos</label><select class="form-select" name="default_project_state_id" required>{% for state in states %}<option value="{{ state.id }}" {{ state.id == default_project_state_id ? 'selected' : '' }}>{{ state.name }}</option>{% endfor %}</select><small class="text-muted">Projetos nunca são criados sem estado.</small></div>
           <div class="col-md-6"><label class="form-label">Estado inicial de tarefas</label><select class="form-select" name="default_task_state_id" required>{% for state in states %}<option value="{{ state.id }}" {{ state.id == default_task_state_id ? 'selected' : '' }}>{{ state.name }}</option>{% endfor %}</select><small class="text-muted">Toda tarefa nasce neste estado.</small></div>
           <div class="col-md-6"><label class="form-label">Modo padrão de execução</label><select class="form-select" name="default_execution_mode"><option value="direct" {{ default_execution_mode == 'direct' ? 'selected' : '' }}>Tarefa direta no projeto</option><option value="ticket" {{ default_execution_mode == 'ticket' ? 'selected' : '' }}>Tarefa + chamado</option></select></div>
-          <div class="col-md-6"><label class="form-label">Controle padrão</label><select class="form-select" name="default_cost_mode"><option value="hours" {{ default_cost_mode == 'hours' ? 'selected' : '' }}>Horas</option><option value="money" {{ default_cost_mode == 'money' ? 'selected' : '' }}>Custo financeiro</option></select></div>
+          <div class="col-md-6"><label class="form-label">Controle padrão</label><select class="form-select" name="default_cost_mode"><option value="hours" {{ default_cost_mode == 'hours' ? 'selected' : '' }}>Horas</option><option value="money" {{ default_cost_mode == 'money' ? 'selected' : '' }}>Custo financeiro</option><option value="both" {{ default_cost_mode == 'both' ? 'selected' : '' }}>Horas + custo</option></select></div>
         </div>
       </section>
 
@@ -52,8 +52,8 @@
         </div>
         <div class="pf-switch-list">
           <label class="pf-switch-row">
-            <div><strong>Progresso automático pelo Kanban</strong><span>Ao mover uma tarefa para outra coluna, o percentual da tarefa passa a ser o percentual configurado para o estado.</span></div>
-            <input class="form-check-input" type="checkbox" name="auto_progress_on_kanban" value="1" {{ auto_progress_on_kanban ? 'checked' : '' }}>
+            <div><strong>Andamento definido pelo estado</strong><span>O percentual da tarefa não é digitado: ele sempre segue o percentual configurado para o estado (finalizado = 100%), em qualquer tela, inclusive no formulário nativo do GLPI.</span></div>
+            <input class="form-check-input" type="checkbox" checked disabled title="Sempre ativo">
           </label>
           <label class="pf-switch-row">
             <div><strong>Sincronizar executor com a equipe do projeto</strong><span>Usuários, grupos, fornecedores ou contatos adicionados a uma tarefa entram automaticamente na equipe do projeto.</span></div>
@@ -79,42 +79,29 @@
       </section>
     </div>
 
-    <section class="pf-panel mt-3">
+    <section class="pf-panel pf-ai-config" data-pf-config-pane="ai">
       <div class="pf-panel-header">
-        <div>
-          <div class="pf-eyebrow">KANBAN</div>
-          <h2>Percentual por estado</h2>
-          <p class="mb-0">Este mapa é o motor da evolução automática da tarefa. O GLPI recalcula o projeto a partir das tarefas quando o progresso automático do projeto está habilitado.</p>
-        </div>
+        <div><div class="pf-eyebrow">INTELIGÊNCIA ARTIFICIAL</div><h2>Relatórios com Gemini</h2><p class="mb-0">Com a IA ligada, a aba Relatório semanal do projeto ganha o botão <strong>Gerar com IA</strong>. Ele envia ao Gemini, em uma única requisição, os dados do projeto e de todas as tarefas (comentários, execuções, reuniões, horas, prazos e pontos de atenção) e devolve o relatório pronto para revisar.</p></div>
       </div>
-      <div class="pf-state-progress-grid">
-        {% for state in states %}
-          <label class="pf-state-progress-card" style="--pf-state-color:{{ state.color }}">
-            <span class="pf-state-progress-name"><i></i><strong>{{ state.name }}</strong>{% if state.is_finished %}<small>Finalizado</small>{% endif %}</span>
-            <span class="pf-state-progress-control">
-              <input type="number" class="form-control" min="0" max="100" step="5" name="state_progress[{{ state.id }}]" value="{{ state.is_finished ? 100 : state.progress }}" {{ state.is_finished ? 'readonly' : '' }}>
-              <b>%</b>
-            </span>
-          </label>
-        {% else %}
-          <div class="pf-empty-inline">Cadastre estados de projeto/tarefa no GLPI para configurar o fluxo.</div>
-        {% endfor %}
-      </div>
-      <div class="pf-config-flow-example">
-        <span><b>Backlog</b><small>0%</small></span><i class="ti ti-arrow-right"></i>
-        <span><b>A fazer</b><small>10%</small></span><i class="ti ti-arrow-right"></i>
-        <span><b>Em andamento</b><small>50%</small></span><i class="ti ti-arrow-right"></i>
-        <span><b>Homologação</b><small>90%</small></span><i class="ti ti-arrow-right"></i>
-        <span><b>Concluído</b><small>100%</small></span>
+      <div class="row g-3">
+        <div class="col-md-3 d-flex align-items-start pt-md-4"><label class="form-check form-switch mt-md-1"><input class="form-check-input" type="checkbox" name="ai_enabled" value="1" {{ ai_enabled ? 'checked' : '' }}><span class="form-check-label">Ativar geração por IA</span></label></div>
+        <div class="col-md-5"><label class="form-label">Chave da API do Gemini</label><input type="password" name="ai_gemini_key" class="form-control" autocomplete="new-password" placeholder="{{ ai_has_key ? '•••••• chave salva' : 'Cole a chave do Google AI Studio' }}">
+          {% if ai_has_key %}<label class="form-check mt-1"><input class="form-check-input" type="checkbox" name="ai_gemini_key_clear" value="1"><span class="form-check-label small">Remover a chave salva</span></label>{% endif %}
+          <small class="text-muted d-block">{{ ai_has_key ? 'Deixe em branco para manter a chave atual. ' : '' }}A chave fica criptografada no banco (GLPIKey) e não volta para o navegador.</small></div>
+        <div class="col-md-4"><label class="form-label">Modelo</label><div class="input-group"><input name="ai_gemini_model" class="form-control" list="pf-ai-models" value="{{ ai_gemini_model }}" maxlength="80"><button type="button" class="btn btn-outline-secondary" id="pf-ai-test" data-endpoint="{{ ajax_config_url }}" data-csrf="{{ csrf_token }}"><i class="ti ti-plug-connected"></i> Testar</button></div><datalist id="pf-ai-models"></datalist><small class="text-muted d-block" id="pf-ai-test-result">"Testar" confere a chave e lista os modelos disponíveis para ela.</small></div>
+        <div class="col-md-4 offset-md-8"><label class="form-label">Modelo reserva</label><input name="ai_gemini_fallback_model" class="form-control" list="pf-ai-models" value="{{ ai_gemini_fallback_model }}" maxlength="80" placeholder="Vazio = sem reserva"><small class="text-muted d-block">Usado quando o modelo principal continua sobrecarregado depois de 3 tentativas.</small></div>
+        <div class="col-12"><label class="form-label">Instruções adicionais para a IA (opcional)</label><textarea name="ai_instructions" class="form-control" rows="3" maxlength="4000" placeholder="Ex.: escreva para o cliente final, tom cordial; destaque sempre o saldo de horas; assine como Equipe Pellissari.">{{ ai_instructions }}</textarea></div>
+        <div class="col-12"><div class="pf-info-box"><i class="ti ti-shield-lock"></i><div><strong>Privacidade (LGPD)</strong><p>Ao gerar com IA, os dados do projeto são enviados ao Google (Gemini API): nomes de tarefas e de pessoas, comentários e resumos de reuniões. Os e-mails dos usuários não são enviados. Confirme se isso está coberto pela política da empresa e pelo contrato com o cliente. Nas chaves gratuitas, o Google pode usar os dados para melhorar os modelos; para dados de cliente, use uma chave de projeto com faturamento ativo.</p></div></div></div>
       </div>
     </section>
 
-    <div class="pf-info-box mt-3">
+
+    <div class="pf-info-box mt-3" data-pf-config-pane="general">
       <i class="ti ti-database-check"></i>
       <div><strong>Dados operacionais continuam no GLPI</strong><p>Projetos, tarefas, equipes, chamados, documentos, contratos e planejamento continuam nativos do GLPI. O Project Flow adiciona apenas o que o módulo nativo não oferece de forma adequada: atividades operacionais, horas, reuniões, pontos de atenção, lembretes e snapshots de relatório semanal.</p></div>
     </div>
 
-    <div class="pf-config-savebar">
+    <div class="pf-config-savebar" data-pf-config-pane="general ai">
       <span>As alterações passam a valer nos próximos movimentos e operações do workspace.</span>
       <button class="btn btn-primary" type="submit"><i class="ti ti-device-floppy"></i> Salvar configurações</button>
     </div>
@@ -122,9 +109,9 @@
 
   <div id="projectflow-config-catalog" data-endpoint="{{ ajax_config_url }}" data-csrf="{{ csrf_token }}">
 
-    <section class="pf-panel mt-3 pf-catalog">
+    <section class="pf-panel pf-catalog" data-pf-config-pane="states">
       <div class="pf-panel-header">
-        <div><div class="pf-eyebrow">CADASTROS</div><h2>Estados de projetos e tarefas</h2><p class="mb-0">No GLPI, projetos e tarefas usam a mesma lista de estados. O percentual define o andamento ao mover a tarefa no Kanban; estados finalizados valem 100%.</p></div>
+        <div><div class="pf-eyebrow">CADASTROS</div><h2>Estados de projetos e tarefas</h2><p class="mb-0">No GLPI, projetos e tarefas usam a mesma lista de estados. O percentual define o andamento ao mover a tarefa no Kanban; estados finalizados valem 100%. Um estado que <strong>pausa o projeto</strong> suspende lembretes, avisos das regras e notificações do GLPI enquanto o projeto estiver nele, e o projeto não conta como atrasado.</p></div>
       </div>
       <div class="table-responsive"><table class="table pf-table pf-catalog-table">
         <thead><tr><th>Estado</th><th class="text-end">% no Kanban</th><th>Tipo</th><th class="text-end">Em uso</th><th></th></tr></thead>
@@ -133,10 +120,10 @@
             <tr>
               <td><span class="pf-catalog-dot" style="--pf-state-color:{{ state.color }}"></span><strong>{{ state.name }}</strong>{% if state.comment %}<small class="d-block text-muted">{{ state.comment }}</small>{% endif %}</td>
               <td class="text-end">{{ state.progress }}%</td>
-              <td>{% if state.is_finished %}<span class="badge bg-green-lt">Finalizado</span>{% else %}<span class="badge bg-blue-lt">Em aberto</span>{% endif %}</td>
+              <td>{% if state.is_finished %}<span class="badge bg-green-lt">Finalizado</span>{% elseif state.is_paused %}<span class="badge bg-orange-lt" title="Projetos neste estado não enviam notificações"><i class="ti ti-player-pause"></i> Pausa o projeto</span>{% else %}<span class="badge bg-blue-lt">Em aberto</span>{% endif %}</td>
               <td class="text-end">{{ state.usage }}</td>
               <td class="text-end text-nowrap">
-                <button type="button" class="btn btn-sm btn-ghost-secondary pf-icon-btn" data-pf-catalog-edit="state" data-item="{{ {'id': state.id, 'name': state.name, 'color': state.color, 'percent': state.progress, 'is_finished': state.is_finished, 'comment': state.comment}|json_encode|e('html_attr') }}" title="Editar"><i class="ti ti-pencil"></i></button>
+                <button type="button" class="btn btn-sm btn-ghost-secondary pf-icon-btn" data-pf-catalog-edit="state" data-item="{{ {'id': state.id, 'name': state.name, 'color': state.color, 'percent': state.progress, 'is_finished': state.is_finished, 'is_paused': state.is_paused, 'comment': state.comment}|json_encode|e('html_attr') }}" title="Editar"><i class="ti ti-pencil"></i></button>
                 <button type="button" class="btn btn-sm btn-ghost-danger pf-icon-btn" data-pf-catalog-delete="state" data-id="{{ state.id }}" data-name="{{ state.name }}" title="{{ state.usage ? 'Em uso: troque o estado dos itens antes de excluir' : 'Excluir' }}" {{ state.usage ? 'disabled' : '' }}><i class="ti ti-trash"></i></button>
               </td>
             </tr>
@@ -152,14 +139,14 @@
           <div class="col-md-4"><label class="form-label">Nome *</label><input name="name" class="form-control" maxlength="255" required placeholder="Ex.: Em homologação"></div>
           <div class="col-md-2 col-6"><label class="form-label">Cor</label><input type="color" name="color" class="form-control form-control-color w-100" value="#3b82f6"></div>
           <div class="col-md-2 col-6"><label class="form-label">% no Kanban</label><div class="input-group"><input type="number" name="percent" class="form-control" min="0" max="100" step="5" value="0"><span class="input-group-text">%</span></div></div>
-          <div class="col-md-2"><label class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" name="is_finished" value="1"><span class="form-check-label">Finalizado</span></label></div>
+          <div class="col-md-2"><label class="form-check form-switch mb-1"><input class="form-check-input" type="checkbox" name="is_finished" value="1"><span class="form-check-label">Finalizado</span></label><label class="form-check form-switch mb-0" title="Projeto neste estado fica em pausa: sem lembretes, sem avisos das regras e sem notificações do GLPI"><input class="form-check-input" type="checkbox" name="is_paused" value="1"><span class="form-check-label">Pausa o projeto</span></label></div>
           <div class="col-md-2 text-md-end"><button type="button" class="btn btn-sm btn-outline-secondary d-none" data-pf-catalog-cancel>Cancelar</button> <button class="btn btn-primary" type="submit"><i class="ti ti-device-floppy"></i> Salvar</button></div>
           <div class="col-12"><input name="comment" class="form-control form-control-sm" maxlength="2000" placeholder="Comentário (opcional)"></div>
         </div>
       </form>
     </section>
 
-    <div class="pf-config-grid mt-3">
+    <div class="pf-config-grid" data-pf-config-pane="types">
       {% for kind in [{'key': 'project_type', 'title': 'Tipos de projeto', 'items': project_types, 'hint': 'Usados no campo Tipo do projeto.', 'placeholder': 'Ex.: Implantação'}, {'key': 'task_type', 'title': 'Tipos de tarefa', 'items': task_types, 'hint': 'Usados no campo Tipo das tarefas e dos templates.', 'placeholder': 'Ex.: Configuração'}] %}
         <section class="pf-panel pf-config-card pf-catalog">
           <div class="pf-panel-header"><div><div class="pf-eyebrow">CADASTROS</div><h2>{{ kind.title }}</h2><p class="mb-0">{{ kind.hint }}</p></div></div>
@@ -188,7 +175,7 @@
       {% endfor %}
     </div>
 
-    <section class="pf-panel mt-3 pf-catalog">
+    <section class="pf-panel pf-catalog" data-pf-config-pane="rules">
       <div class="pf-panel-header">
         <div><div class="pf-eyebrow">AUTOMAÇÃO</div><h2>Regras por andamento</h2><p class="mb-0">Quando o andamento de uma tarefa muda, a primeira regra ativa cuja faixa contém o novo percentual define o estado da tarefa. As notificações são enviadas ao entrar na faixa. Mover a tarefa no Kanban não troca o estado por regra, só notifica.</p></div>
       </div>

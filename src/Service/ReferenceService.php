@@ -30,8 +30,9 @@ class ReferenceService
         global $DB;
         if (self::$statesCache !== null) return self::$statesCache;
         $rows=[];
+        $paused=(new MetaService())->getPausedStateIds();
         foreach($DB->request(['FROM'=>ProjectState::getTable(),'ORDERBY'=>['is_finished ASC','id ASC']]) as $row){
-            $rows[]=['id'=>(int)$row['id'],'name'=>(string)$row['name'],'color'=>$row['color']?:'#94a3b8','is_finished'=>(bool)$row['is_finished']];
+            $rows[]=['id'=>(int)$row['id'],'name'=>(string)$row['name'],'color'=>$row['color']?:'#94a3b8','is_finished'=>(bool)$row['is_finished'],'is_paused'=>in_array((int)$row['id'],$paused,true)];
         }
         return self::$statesCache = $rows;
     }
@@ -88,8 +89,57 @@ class ReferenceService
 
     public function getTemplates(): array
     {
-        global $DB;$rows=[];$table=Project::getTable();$criteria=['FROM'=>$table,'WHERE'=>array_merge(["$table.is_template"=>1,"$table.is_deleted"=>0],getEntitiesRestrictCriteria($table,'','',true)),'ORDERBY'=>["$table.template_name ASC","$table.name ASC"]];
-        foreach($DB->request($criteria) as $r){$p=new Project();$p->getFromResultSet($r);if(!$p->canViewItem())continue;$rows[]=['id'=>(int)$r['id'],'name'=>(string)(($r['template_name']??'')?:($r['name']??('Template #'.$r['id']))),'description'=>trim(strip_tags((string)($r['content']??''))),'native_url'=>Project::getFormURLWithID((int)$r['id']),'plugin_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/project.php?id='.(int)$r['id'],'tasks_count'=>countElementsInTable('glpi_projecttasks',['projects_id'=>(int)$r['id'],'is_deleted'=>0]),'can_update'=>$p->canUpdateItem()];} return $rows;
+        global $DB;
+        $rows = [];
+        $table = Project::getTable();
+        $criteria = ['FROM' => $table, 'WHERE' => array_merge(["$table.is_template" => 1, "$table.is_deleted" => 0], getEntitiesRestrictCriteria($table, '', '', true)), 'ORDERBY' => ["$table.template_name ASC", "$table.name ASC"]];
+        $raw = [];
+        foreach ($DB->request($criteria) as $r) {
+            $p = new Project();
+            $p->getFromResultSet($r);
+            if (!$p->canViewItem()) continue;
+            $raw[] = [$r, $p->canUpdateItem()];
+        }
+        $ids = array_map(static fn(array $x): int => (int) $x[0]['id'], $raw);
+        $metas = $ids ? (new MetaService())->getForProjects($ids) : [];
+        // Tasks count + planned hours per template in one query.
+        $taskStats = [];
+        if ($ids) {
+            foreach ($DB->request(['SELECT' => ['projects_id', 'planned_duration'], 'FROM' => 'glpi_projecttasks', 'WHERE' => ['projects_id' => $ids, 'is_deleted' => 0]]) as $t) {
+                $pid = (int) $t['projects_id'];
+                $taskStats[$pid]['count'] = ($taskStats[$pid]['count'] ?? 0) + 1;
+                $taskStats[$pid]['seconds'] = ($taskStats[$pid]['seconds'] ?? 0) + (int) ($t['planned_duration'] ?? 0);
+            }
+        }
+        $types = [];
+        foreach ($this->getProjectTypes() as $t) $types[$t['id']] = $t['name'];
+        foreach ($raw as [$r, $canUpdate]) {
+            $id = (int) $r['id'];
+            $meta = $metas[$id] ?? [];
+            $costMode = (string) ($meta['cost_mode'] ?? 'hours');
+            $budget = (int) ($meta['hours_budget_minutes'] ?? 0);
+            $plannedTaskHours = round(((int) ($taskStats[$id]['seconds'] ?? 0)) / 3600, 1);
+            $rows[] = [
+                'id' => $id,
+                'name' => (string) (($r['template_name'] ?? '') ?: ($r['name'] ?? ('Template #' . $id))),
+                'code' => (string) ($r['code'] ?? ''),
+                'description' => trim(strip_tags((string) (($meta['objective'] ?? '') ?: ($r['content'] ?? '')))),
+                'type_name' => $types[(int) ($r['projecttypes_id'] ?? 0)] ?? '',
+                'manager_name' => (int) ($r['users_id'] ?? 0) > 0 ? getUserName((int) $r['users_id']) : '',
+                'execution_label' => (($meta['execution_mode'] ?? 'direct') === 'ticket') ? 'Tarefa + chamado' : 'Tarefa direta',
+                'cost_mode' => $costMode,
+                'cost_label' => ProjectService::costModeLabel($costMode),
+                'budget_label' => $budget > 0 ? WorklogService::formatMinutes($budget) : '',
+                'task_hours_label' => $plannedTaskHours > 0 ? str_replace('.', ',', (string) $plannedTaskHours) . 'h' : '',
+                'date_mod' => $r['date_mod'] ?? null,
+                'native_url' => Project::getFormURLWithID($id),
+                'plugin_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/project.php?id=' . $id,
+                'use_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/index.php?template=' . $id,
+                'tasks_count' => (int) ($taskStats[$id]['count'] ?? 0),
+                'can_update' => $canUpdate,
+            ];
+        }
+        return $rows;
     }
 
     public function getContracts(int $entityId=0,int $limit=500): array

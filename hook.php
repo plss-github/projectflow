@@ -30,6 +30,7 @@ function plugin_projectflow_install(): bool
             `execution_mode` VARCHAR(20) NOT NULL DEFAULT 'direct',
             `cost_mode` VARCHAR(20) NOT NULL DEFAULT 'hours',
             `hours_budget_minutes` INT UNSIGNED NOT NULL DEFAULT 0,
+            `hour_rate` DECIMAL(12,2) NOT NULL DEFAULT 0,
             `date_mod` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             UNIQUE KEY `uniq_project` (`projects_id`),
@@ -41,6 +42,7 @@ function plugin_projectflow_install(): bool
         projectflow_add_column('glpi_plugin_projectflow_projectmeta', 'execution_mode', "VARCHAR(20) NOT NULL DEFAULT 'direct'");
         projectflow_add_column('glpi_plugin_projectflow_projectmeta', 'cost_mode', "VARCHAR(20) NOT NULL DEFAULT 'hours'");
         projectflow_add_column('glpi_plugin_projectflow_projectmeta', 'hours_budget_minutes', "INT UNSIGNED NOT NULL DEFAULT 0");
+        projectflow_add_column('glpi_plugin_projectflow_projectmeta', 'hour_rate', "DECIMAL(12,2) NOT NULL DEFAULT 0");
     }
 
     if (!$DB->tableExists('glpi_plugin_projectflow_taskmeta')) {
@@ -56,6 +58,7 @@ function plugin_projectflow_install(): bool
             `reminder_browser` TINYINT(1) NOT NULL DEFAULT 1,
             `reminder_sent_at` DATETIME NULL,
             `reminder_attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+            `allowed_states` VARCHAR(1000) NOT NULL DEFAULT '',
             `date_mod` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             UNIQUE KEY `uniq_task` (`projecttasks_id`),
@@ -72,6 +75,7 @@ function plugin_projectflow_install(): bool
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_browser', "TINYINT(1) NOT NULL DEFAULT 1");
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_sent_at', 'DATETIME NULL');
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_attempts', 'TINYINT UNSIGNED NOT NULL DEFAULT 0');
+        projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'allowed_states', "VARCHAR(1000) NOT NULL DEFAULT ''");
     }
 
     if (!$DB->tableExists('glpi_plugin_projectflow_stateprogress')) {
@@ -79,10 +83,12 @@ function plugin_projectflow_install(): bool
             `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
             `projectstates_id` INT UNSIGNED NOT NULL,
             `percent_done` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+            `is_paused` TINYINT(1) NOT NULL DEFAULT 0,
             PRIMARY KEY (`id`),
             UNIQUE KEY `uniq_state` (`projectstates_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC");
     }
+    projectflow_add_column('glpi_plugin_projectflow_stateprogress', 'is_paused', "TINYINT(1) NOT NULL DEFAULT 0");
 
     if (!$DB->tableExists('glpi_plugin_projectflow_favorites')) {
         $DB->doQuery("CREATE TABLE `glpi_plugin_projectflow_favorites` (
@@ -358,5 +364,130 @@ function plugin_projectflow_item_update(CommonDBTM $item): void
         (new \GlpiPlugin\Projectflow\Service\ProgressRuleService())->onTaskUpdated($item);
     } catch (\Throwable $e) {
         \Toolbox::logError('[Project Flow] item_update: ' . $e->getMessage());
+    }
+}
+
+
+/**
+ * Mirror task attachments on the project: when a Document is linked to a ProjectTask, the
+ * same Document is linked to the task's Project (native Document_Item, no file copy).
+ */
+function plugin_projectflow_document_item_add(CommonDBTM $item): void
+{
+    if (!$item instanceof Document_Item || ($item->fields['itemtype'] ?? '') !== ProjectTask::class) {
+        return;
+    }
+    try {
+        (new \GlpiPlugin\Projectflow\Service\DocumentService())->mirrorTaskDocumentOnProject(
+            (int) ($item->fields['documents_id'] ?? 0),
+            (int) ($item->fields['items_id'] ?? 0)
+        );
+    } catch (\Throwable $e) {
+        \Toolbox::logError('[Project Flow] document mirror: ' . $e->getMessage());
+    }
+}
+
+
+/**
+ * Before a ProjectTask is added/updated (any screen): percent_done is taken from the state
+ * (percent per state, finished state = 100) and GLPI's automatic percent is disabled.
+ */
+function plugin_projectflow_pre_task_save(CommonDBTM $item): void
+{
+    if (!$item instanceof ProjectTask || !is_array($item->input ?? null)) {
+        return;
+    }
+    $input = &$item->input;
+    $isAdd = empty($item->fields['id']);
+    // Paused project: GLPI's own notifications for its tasks are not sent either.
+    $projectId = (int) ($input['projects_id'] ?? ($item->fields['projects_id'] ?? 0));
+    if ($projectId > 0 && (new \GlpiPlugin\Projectflow\Service\MetaService())->isProjectPaused($projectId)) {
+        $input['_disablenotif'] = true;
+    }
+    plugin_projectflow_complete_task_dates($item);
+    if (!$isAdd && !array_key_exists('percent_done', $input) && !array_key_exists('projectstates_id', $input) && !array_key_exists('auto_percent_done', $input)) {
+        return;
+    }
+    $stateId = (int) ($input['projectstates_id'] ?? ($item->fields['projectstates_id'] ?? 0));
+    $states = (new \GlpiPlugin\Projectflow\Service\ReferenceService())->getStateMap();
+    if ($stateId > 0 && !empty($states[$stateId]['is_finished'])) {
+        $percent = 100;
+    } elseif ($stateId > 0) {
+        $percent = (new \GlpiPlugin\Projectflow\Service\MetaService())->getStateProgress($stateId, (int) ($item->fields['percent_done'] ?? 0));
+    } else {
+        $percent = $isAdd ? 0 : (int) ($item->fields['percent_done'] ?? 0);
+    }
+    $input['percent_done'] = $percent;
+    $input['auto_percent_done'] = 0;
+}
+
+/**
+ * Project in a state flagged "pausa o projeto" (or being moved into one): GLPI's native
+ * notifications for the project are not sent while it is paused.
+ */
+function plugin_projectflow_pre_project_save(CommonDBTM $item): void
+{
+    if (!$item instanceof Project || !is_array($item->input ?? null)) {
+        return;
+    }
+    $stateId = (int) ($item->input['projectstates_id'] ?? ($item->fields['projectstates_id'] ?? 0));
+    if ((new \GlpiPlugin\Projectflow\Service\MetaService())->isPausedState($stateId)) {
+        $item->input['_disablenotif'] = true;
+    }
+}
+
+/**
+ * GLPI's planning (Assistência > Planejamento) only shows a project task to its executors when the
+ * task has BOTH a planned start and a planned end. A task typed with only a deadline (or only a
+ * start) is completed here: the missing date is derived from the planned duration (1h when none).
+ */
+function plugin_projectflow_complete_task_dates(ProjectTask $item): void
+{
+    $input = &$item->input;
+    $isAdd = empty($item->fields['id']);
+    if (!$isAdd && !array_key_exists('plan_start_date', $input) && !array_key_exists('plan_end_date', $input)) {
+        return;
+    }
+    $start = array_key_exists('plan_start_date', $input) ? $input['plan_start_date'] : ($item->fields['plan_start_date'] ?? null);
+    $end = array_key_exists('plan_end_date', $input) ? $input['plan_end_date'] : ($item->fields['plan_end_date'] ?? null);
+    $start = ($start === null || trim((string) $start) === '' || $start === 'NULL') ? null : (string) $start;
+    $end = ($end === null || trim((string) $end) === '' || $end === 'NULL') ? null : (string) $end;
+    if (($start === null) === ($end === null)) {
+        return; // both set or both empty: nothing to complete
+    }
+    $duration = (int) ($input['planned_duration'] ?? ($item->fields['planned_duration'] ?? 0));
+    if ($duration <= 0) {
+        $duration = HOUR_TIMESTAMP;
+    }
+    if ($start === null) {
+        $ts = strtotime($end);
+        if ($ts) $input['plan_start_date'] = date('Y-m-d H:i:s', $ts - $duration);
+    } else {
+        $ts = strtotime($start);
+        if ($ts) $input['plan_end_date'] = date('Y-m-d H:i:s', $ts + $duration);
+    }
+}
+
+/**
+ * One-shot repair of tasks created before the rule above: tasks with a single planned date get the
+ * other one, so they show up in the executors' GLPI planning.
+ */
+function plugin_projectflow_repair_task_planning_dates(): void
+{
+    global $DB;
+    if (\GlpiPlugin\Projectflow\Config::bool('planning_dates_repaired', false)) {
+        return;
+    }
+    try {
+        $table = ProjectTask::getTable();
+        $DB->update($table, [
+            'plan_start_date' => new \Glpi\DBAL\QueryExpression('DATE_SUB(' . $DB::quoteName('plan_end_date') . ', INTERVAL GREATEST(' . $DB::quoteName('planned_duration') . ', 3600) SECOND)'),
+        ], ['plan_start_date' => null, 'NOT' => ['plan_end_date' => null]]);
+        $DB->update($table, [
+            'plan_end_date' => new \Glpi\DBAL\QueryExpression('DATE_ADD(' . $DB::quoteName('plan_start_date') . ', INTERVAL GREATEST(' . $DB::quoteName('planned_duration') . ', 3600) SECOND)'),
+        ], ['plan_end_date' => null, 'NOT' => ['plan_start_date' => null]]);
+        \GlpiPlugin\Projectflow\Config::set('planning_dates_repaired', '1');
+    } catch (\Throwable $e) {
+        \Toolbox::logError('[Project Flow] planning dates repair: ' . $e->getMessage());
     }
 }

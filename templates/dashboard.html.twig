@@ -4,9 +4,8 @@
     <a class="pf-dash-menu-link" href="{{ tasks_url }}"><i class="ti ti-list-check"></i> Minhas tarefas</a>
     <a class="pf-dash-menu-link" href="{{ native_list_url }}" title="Lista de projetos nativa do GLPI (busca avançada, ações em massa)"><i class="ti ti-list-search"></i> Lista nativa</a>
     {% if can_create_project %}
-      <div class="btn-group pf-dash-menu-new">
-        <button class="btn btn-primary btn-sm" type="button" data-pf-new-project="0" data-bs-toggle="modal" data-bs-target="#pf-project-create-modal"><i class="ti ti-plus"></i> Novo projeto</button>
-        <button class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Criar a partir de template"><span class="visually-hidden">Mais opções</span></button>
+      <div class="dropdown pf-dash-menu-new">
+        <button class="btn btn-primary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="ti ti-plus"></i> Novo projeto</button>
         <div class="dropdown-menu dropdown-menu-end pf-dash-menu-dropdown">
           <button class="dropdown-item" type="button" data-pf-new-project="0" data-bs-toggle="modal" data-bs-target="#pf-project-create-modal"><i class="ti ti-file-plus"></i> Projeto em branco</button>
           <div class="dropdown-divider"></div>
@@ -14,9 +13,10 @@
           {% for template in templates %}
             <button class="dropdown-item" type="button" data-pf-new-project="{{ template.id }}"><i class="ti ti-template"></i> {{ template.name }}</button>
           {% else %}
-            <span class="dropdown-item-text text-muted small">Nenhum template nativo cadastrado.</span>
+            <span class="dropdown-item-text text-muted small">Nenhum template cadastrado.</span>
           {% endfor %}
           <div class="dropdown-divider"></div>
+          <a class="dropdown-item" href="{{ templates_url }}?new=1"><i class="ti ti-square-plus"></i> Criar template</a>
           <a class="dropdown-item" href="{{ templates_url }}"><i class="ti ti-settings"></i> Gerenciar templates</a>
         </div>
       </div>
@@ -54,7 +54,7 @@
             <button type="button" class="pf-favorite {{ project.is_favorite ? 'is-active' : '' }}" data-project-id="{{ project.id }}" aria-label="Favoritar"><i class="ti ti-star{{ project.is_favorite ? '-filled' : '' }}"></i></button>
           </div>
           <a class="pf-card-main-link" href="{{ project.plugin_url }}">
-            <div class="pf-title-line"><h3>{{ project.name }}</h3><span class="pf-state-badge" style="--pf-state-color:{{ project.state.color }}"><i></i>{{ project.state.name }}</span></div>
+            <div class="pf-title-line"><h3>{{ project.name }}</h3><span class="pf-state-badge" style="--pf-state-color:{{ project.state.color }}"><i></i>{{ project.state.name }}</span>{% if project.is_paused %}<span class="pf-paused-badge" title="Projeto pausado: sem notificações"><i class="ti ti-player-pause"></i></span>{% endif %}</div>
             <p class="pf-project-desc">{{ project.objective ?: (project.content ?: 'Sem objetivo ou descrição cadastrada.') }}</p>
             <div class="pf-progress-label"><span>Progresso</span><strong>{{ project.percent_done }}%</strong></div>
             <div class="progress pf-progress"><div class="progress-bar" style="width:{{ project.percent_done }}%"></div></div>
@@ -86,7 +86,9 @@
     <form id="pf-project-create-form">
       <div class="modal-header"><div><div class="pf-eyebrow">NOVO PROJETO</div><h2 class="modal-title fs-4">Criar projeto</h2><p class="mb-0 text-muted">Crie do zero ou clone um template nativo do GLPI.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body"><input type="hidden" name="action" value="create"><input type="hidden" name="_glpi_csrf_token" value="{{ csrf_token }}">
-        <div class="pf-form-section"><h3>Identificação</h3><div class="row g-3">
+        <nav class="pf-form-tabs" role="tablist"><button type="button" data-pf-form-tab="ident" class="is-active"><span class="pf-form-tab-step">1</span><i class="ti ti-id"></i><span>Identificação</span></button><button type="button" data-pf-form-tab="plan"><span class="pf-form-tab-step">2</span><i class="ti ti-calendar-stats"></i><span>Planejamento</span></button><button type="button" data-pf-form-tab="gov"><span class="pf-form-tab-step">3</span><i class="ti ti-shield-check"></i><span>Governança</span></button><button type="button" data-pf-form-tab="cost"><span class="pf-form-tab-step">4</span><i class="ti ti-coin"></i><span>Contabilização</span></button><button type="button" data-pf-form-tab="tasks"><span class="pf-form-tab-step">5</span><i class="ti ti-list-check"></i><span>Tarefas</span><em class="pf-form-tab-badge d-none" id="pf-tpl-task-badge"></em></button></nav>
+        <div class="pf-template-applied d-none" id="pf-template-applied"><i class="ti ti-template"></i><div><strong>Preenchido com o template <span data-pf-tpl-name></span></strong><small>Todas as abas receberam as definições do template. Ajuste o que precisar e escolha as tarefas na aba <a href="#" data-pf-goto-form-tab="tasks">Tarefas</a>.</small></div></div>
+        <div class="pf-form-section" data-pf-form-pane="ident"><p class="pf-pane-lead">Nome, template de origem e contexto do projeto.</p><div class="row g-3">
           <div class="col-lg-8"><label class="form-label">Nome *</label><input name="name" class="form-control" maxlength="255" required placeholder="Ex.: Implantação GLPI - Cliente XYZ"></div>
           <div class="col-lg-4"><label class="form-label">Código</label><input name="code" class="form-control" maxlength="255" placeholder="PRJ-001"></div>
           <div class="col-lg-4"><label class="form-label">Template</label><select name="template_id" class="form-select"><option value="0">Projeto em branco</option>{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select></div>
@@ -95,7 +97,7 @@
           <div class="col-12"><label class="form-label">Objetivo / descrição executiva</label><textarea name="objective" class="form-control" rows="2" maxlength="4000" placeholder="O que este projeto pretende entregar e qual resultado é esperado?"></textarea></div>
           <div class="col-12"><label class="form-label">Descrição operacional</label><textarea name="content" class="form-control" rows="3" maxlength="10000"></textarea></div>
         </div></div>
-        <div class="pf-form-section"><h3>Planejamento e governança</h3><div class="row g-3">
+        <div class="pf-form-section d-none" data-pf-form-pane="plan"><p class="pf-pane-lead">Estado inicial, responsáveis e datas planejadas.</p><div class="row g-3">
           <div class="col-md-3"><label class="form-label">Estado</label><select name="projectstates_id" class="form-select">{% for state in states %}<option value="{{ state.id }}" {{ state.id == default_project_state_id ? 'selected' : '' }}>{{ state.name }}</option>{% endfor %}</select></div>
           <div class="col-md-3"><label class="form-label">Prioridade</label><select name="priority" class="form-select">{% for priority in priorities %}<option value="{{ priority.id }}" {{ priority.id == 3 ? 'selected' : '' }}>{{ priority.name }}</option>{% endfor %}</select></div>
           <div class="col-md-3"><label class="form-label">Execução</label><select name="execution_mode" class="form-select"><option value="direct" {{ default_execution_mode == 'direct' ? 'selected' : '' }}>Tarefa direta</option><option value="ticket" {{ default_execution_mode == 'ticket' ? 'selected' : '' }}>Tarefa + chamado</option></select></div>
@@ -103,6 +105,8 @@
           <div class="col-md-3"><label class="form-label">Grupo responsável</label><select name="groups_id" class="form-select"><option value="0">Não definido</option>{% for group in groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></div>
           <div class="col-md-3"><label class="form-label">Início planejado</label><input type="datetime-local" name="plan_start_date" class="form-control"></div>
           <div class="col-md-3"><label class="form-label">Prazo</label><input type="datetime-local" name="plan_end_date" class="form-control"></div>
+        </div></div>
+        <div class="pf-form-section d-none" data-pf-form-pane="gov"><p class="pf-pane-lead">Portfólio, patrocinador, saúde, risco e visibilidade.</p><div class="row g-3">
           <div class="col-md-3"><label class="form-label">Portfólio</label><input name="portfolio" class="form-control" maxlength="190" placeholder="Ex.: Segurança"></div>
           <div class="col-md-3"><label class="form-label">Patrocinador</label><input name="sponsor" class="form-control" maxlength="190"></div>
           <div class="col-md-3"><label class="form-label">Saúde</label><select name="health" class="form-select"><option value="auto">Automática</option><option value="good">Saudável</option><option value="attention">Atenção</option><option value="critical">Crítico</option></select></div>
@@ -110,16 +114,25 @@
           <div class="col-md-3 d-flex align-items-end"><label class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" name="auto_percent_done" value="1" checked><span class="form-check-label">Progresso automático</span></label></div>
           <div class="col-md-3 d-flex align-items-end"><label class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" name="is_recursive" value="1"><span class="form-check-label">Visível em subentidades</span></label></div>
         </div></div>
-        <div class="pf-form-section pf-accounting-section"><h3>Contabilização do projeto</h3><p class="text-muted mb-3">Defina como o esforço/custo principal deste projeto será acompanhado.</p>
+        <div class="pf-form-section pf-accounting-section d-none" data-pf-form-pane="cost"><p class="pf-pane-lead">Defina como o esforço e o custo deste projeto serão acompanhados.</p>
           <div class="pf-accounting-options">
             <label class="pf-accounting-card"><input type="radio" name="cost_mode" value="hours" {{ default_cost_mode == 'hours' ? 'checked' : '' }}><span class="pf-accounting-icon"><i class="ti ti-clock-hour-4"></i></span><span><strong>Contabilizar horas</strong><small>Controle por horas de execução e reuniões, com previsto, consumido e saldo.</small></span></label>
             <label class="pf-accounting-card"><input type="radio" name="cost_mode" value="money" {{ default_cost_mode == 'money' ? 'checked' : '' }}><span class="pf-accounting-icon"><i class="ti ti-currency-real"></i></span><span><strong>Custo financeiro</strong><small>Habilita lançamentos monetários do projeto para usuários com acesso gerencial.</small></span></label>
+            <label class="pf-accounting-card"><input type="radio" name="cost_mode" value="both" {{ default_cost_mode == 'both' ? 'checked' : '' }}><span class="pf-accounting-icon"><i class="ti ti-coin"></i></span><span><strong>Horas + custo</strong><small>Horas previstas com valor por hora: cada hora lançada vira custo, e a gestão lança valores avulsos.</small></span></label>
           </div>
-          <div class="row g-3 mt-1 pf-hours-budget-wrap"><div class="col-md-4"><label class="form-label">Horas previstas / contratadas</label><input type="number" min="0" step="0.25" name="hours_budget_hours" class="form-control" placeholder="Ex.: 160"><small class="text-muted">Usado para calcular consumo e saldo quando o projeto é contabilizado por horas.</small></div></div>
+          <div class="row g-3 mt-1 pf-hours-budget-wrap"><div class="col-md-4"><label class="form-label">Horas previstas / contratadas</label><input type="number" min="0" step="0.25" name="hours_budget_hours" class="form-control" placeholder="Ex.: 160"><small class="text-muted">Usado para calcular consumo e saldo quando o projeto é contabilizado por horas.</small></div><div class="col-md-4 pf-hour-rate-wrap"><label class="form-label">Valor por hora (R$)</label><input name="hour_rate" class="form-control pf-money-input" inputmode="decimal" placeholder="Ex.: 150,00"></div></div>
+        </div>
+        <div class="pf-form-section d-none" data-pf-form-pane="tasks"><p class="pf-pane-lead">Tarefas que vêm do template. Desmarque as que não devem ser criadas neste projeto.</p>
+          <input type="hidden" name="template_task_ids" value=""><input type="hidden" name="template_tasks_filtered" value="">
+          <div class="pf-tpl-tasks-empty" id="pf-tpl-tasks-empty"><i class="ti ti-list-details"></i><strong>Projeto em branco</strong><span>Escolha um template na aba Identificação para trazer as tarefas dele. Sem template, você cria as tarefas depois, dentro do projeto.</span></div>
+          <div class="pf-tpl-tasks d-none" id="pf-tpl-tasks">
+            <div class="pf-tpl-tasks-toolbar"><span id="pf-tpl-tasks-count"></span><div class="btn-group btn-group-sm"><button type="button" class="btn btn-outline-secondary" data-pf-tpl-check="all"><i class="ti ti-checks"></i> Marcar todas</button><button type="button" class="btn btn-outline-secondary" data-pf-tpl-check="none"><i class="ti ti-square"></i> Desmarcar todas</button></div></div>
+            <div class="pf-tpl-task-list" id="pf-tpl-task-list"></div>
+          </div>
         </div>
         <div class="pf-form-message" id="pf-project-create-message"></div>
       </div>
-      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-primary"><i class="ti ti-check"></i> Criar projeto</button></div>
+      <div class="modal-footer pf-form-tabs-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><span class="pf-footer-spacer"></span><button type="button" class="btn btn-outline-secondary pf-form-prev d-none"><i class="ti ti-arrow-left"></i> Voltar</button><button type="button" class="btn btn-outline-primary pf-form-next">Próximo <i class="ti ti-arrow-right"></i></button><button type="submit" class="btn btn-primary"><i class="ti ti-check"></i> Criar projeto</button></div>
     </form>
   </div></div></div>
   {% endif %}

@@ -117,7 +117,7 @@ class ProjectService
         foreach ($this->meta->getForProjects(array_keys($index)) as $id => $meta) {
             if (!isset($index[$id])) continue;
             $index[$id]['execution_mode'] = in_array(($meta['execution_mode'] ?? ''), ['direct', 'ticket'], true) ? $meta['execution_mode'] : 'direct';
-            $index[$id]['cost_mode'] = in_array(($meta['cost_mode'] ?? ''), ['hours', 'money'], true) ? $meta['cost_mode'] : 'hours';
+            $index[$id]['cost_mode'] = in_array(($meta['cost_mode'] ?? ''), MetaService::COST_MODES, true) ? $meta['cost_mode'] : 'hours';
         }
         return $index;
     }
@@ -172,9 +172,30 @@ class ProjectService
         $data['meetings'] = $this->meetings->getForProject($id);
         $data['contracts'] = $this->contracts->getForProject($id);
         $data['can_view_money'] = $this->canViewMoney($project);
-        $data['costs'] = (($data['cost_mode'] ?? 'hours') === 'money' && $data['can_view_money']) ? $this->getCosts($id) : ['items'=>[], 'total'=>0.0, 'total_formatted'=>Html::formatNumber(0)];
+        $data['costs'] = ($data['has_money'] && $data['can_view_money']) ? $this->getCosts($id) : ['items'=>[], 'total'=>0.0, 'total_formatted'=>self::brl(0)];
+        // "Horas + custo": every hour logged (execution and meetings) is valued at the project's hour rate.
+        $rate = ($data['cost_mode'] === 'both') ? (float) $data['hour_rate'] : 0.0;
+        $hoursValue = round(($usedMinutes / 60) * $rate, 2);
+        $plannedValue = round(($budgetMinutes / 60) * $rate, 2);
+        $data['finance'] = [
+            'valued_hours' => $data['cost_mode'] === 'both',
+            'rate' => $rate, 'rate_formatted' => self::brl($rate),
+            'hours_value' => $hoursValue, 'hours_value_formatted' => self::brl($hoursValue),
+            'planned_value' => $plannedValue, 'planned_value_formatted' => self::brl($plannedValue),
+            'extra_total' => (float) $data['costs']['total'], 'extra_total_formatted' => $data['costs']['total_formatted'],
+            'total' => round($hoursValue + (float) $data['costs']['total'], 2),
+            'total_formatted' => self::brl(round($hoursValue + (float) $data['costs']['total'], 2)),
+        ];
+        if ($rate > 0) {
+            foreach ($data['worklogs'] as &$log) {
+                $v = round(((int) ($log['minutes'] ?? 0) / 60) * $rate, 2);
+                $log['value'] = $v;
+                $log['value_formatted'] = self::brl($v);
+            }
+            unset($log);
+        }
         $data['documents'] = $this->getDocuments($id);
-        $data['can_add_cost'] = $data['can_update'] && ($data['cost_mode'] ?? 'hours') === 'money' && $data['can_view_money'];
+        $data['can_add_cost'] = $data['can_update'] && $data['has_money'] && $data['can_view_money'];
         $data['can_add_document'] = $data['can_update'] && Document::canCreate();
         $data['history'] = $this->getHistory($project);
         $data['counts'] = $this->getRelatedCounts($id, (int) ($taskStats['total'] ?? 0)) + ['meetings'=>count($data['meetings'])];
@@ -226,6 +247,14 @@ class ProjectService
             if (!$source->getFromDB($sourceId) || !$source->canViewItem()) return false;
             if (!$asTemplate && empty($source->fields['is_template'])) return false;
             $projectId = $source->clone($override, true, $asTemplate);
+            if ($projectId) {
+                $taskMap = $this->copyClonedTaskMetas($sourceId, (int) $projectId);
+                // Tasks unchecked in the "Novo projeto" form are not kept in the new project.
+                if (!$asTemplate && !empty($input['template_tasks_filtered'])) {
+                    $keep = array_values(array_filter(array_map('intval', explode(',', (string) ($input['template_task_ids'] ?? '')))));
+                    $this->removeUncheckedTemplateTasks($taskMap, $keep);
+                }
+            }
             $sourceMeta = $this->meta->getForProject($sourceId);
             unset($sourceMeta['id'], $sourceMeta['projects_id'], $sourceMeta['date_mod']);
         } else {
@@ -241,6 +270,9 @@ class ProjectService
         }
         if ((int) ($override['groups_id'] ?? 0) > 0) {
             $this->ensureMember($projectId, Group::class, (int) $override['groups_id']);
+        }
+        if (trim((string) ($input['hour_rate'] ?? '')) === '' && !empty($sourceMeta['hour_rate'])) {
+            $input['hour_rate'] = (string) $sourceMeta['hour_rate'];
         }
         if (trim((string) ($input['hours_budget_hours'] ?? '')) === '' && !empty($sourceMeta['hours_budget_minutes'])) {
             $input['hours_budget_hours'] = (string) (((int) $sourceMeta['hours_budget_minutes']) / 60);
@@ -378,8 +410,8 @@ class ProjectService
     {
         global $DB;
         $project = new Project();
-        if (!$project->getFromDB($projectId) || !$project->canViewItem() || !$this->canViewMoney($project) || (($this->meta->getForProject($projectId)['cost_mode'] ?? 'hours') !== 'money')) {
-            return ['items' => [], 'total' => 0.0, 'total_formatted' => Html::formatNumber(0)];
+        if (!$project->getFromDB($projectId) || !$project->canViewItem() || !$this->canViewMoney($project) || !MetaService::costModeHasMoney((string) ($this->meta->getForProject($projectId)['cost_mode'] ?? 'hours'))) {
+            return ['items' => [], 'total' => 0.0, 'total_formatted' => self::brl(0)];
         }
 
         $items = [];
@@ -397,19 +429,19 @@ class ProjectService
                 'begin_date' => $row['begin_date'] ?? null,
                 'end_date' => $row['end_date'] ?? null,
                 'cost' => $cost,
-                'cost_formatted' => Html::formatNumber($cost),
+                'cost_formatted' => self::brl($cost),
                 'budgets_id' => (int) ($row['budgets_id'] ?? 0),
                 'budget' => !empty($row['budgets_id']) ? Dropdown::getDropdownName('glpi_budgets', (int) $row['budgets_id']) : '',
                 'comment' => trim((string) ($row['comment'] ?? '')),
             ];
         }
-        return ['items' => $items, 'total' => $total, 'total_formatted' => Html::formatNumber($total)];
+        return ['items' => $items, 'total' => $total, 'total_formatted' => self::brl($total)];
     }
 
     public function addCost(int $projectId, array $input): int|false
     {
         $project = new Project();
-        if (!$project->getFromDB($projectId) || !$project->can($projectId, UPDATE) || !$this->canViewMoney($project) || (($this->meta->getForProject($projectId)['cost_mode'] ?? 'hours') !== 'money')) {
+        if (!$project->getFromDB($projectId) || !$project->can($projectId, UPDATE) || !$this->canViewMoney($project) || !MetaService::costModeHasMoney((string) ($this->meta->getForProject($projectId)['cost_mode'] ?? 'hours'))) {
             return false;
         }
 
@@ -442,7 +474,7 @@ class ProjectService
         if (!$project->getFromDB($projectId)
             || !$project->can($projectId, UPDATE)
             || !$this->canViewMoney($project)
-            || (($this->meta->getForProject($projectId)['cost_mode'] ?? 'hours') !== 'money')) {
+            || !MetaService::costModeHasMoney((string) ($this->meta->getForProject($projectId)['cost_mode'] ?? 'hours'))) {
             return false;
         }
         $cost = new ProjectCost();
@@ -551,12 +583,14 @@ class ProjectService
         $managerId = (int) ($row['users_id'] ?? 0); $groupId = (int) ($row['groups_id'] ?? 0); $entityId = (int) ($row['entities_id'] ?? 0);
         $start = $row['plan_start_date'] ?? null; $end = $row['plan_end_date'] ?? null; $percent = max(0, min(100, (int) ($row['percent_done'] ?? 0)));
         $isFinished = (bool) $state['is_finished'] || $percent >= 100;
-        $isOverdue = !$isFinished && $end && strtotime($end) < time();
+        $isPaused = !$isFinished && !empty($state['is_paused']);
+        // A paused project does not raise delay alerts while it is on hold.
+        $isOverdue = !$isFinished && !$isPaused && $end && strtotime($end) < time();
         $healthConfigured = (string) ($meta['health'] ?? 'auto');
         $health = $healthConfigured;
         if ($health === 'auto') {
             $days = \GlpiPlugin\Projectflow\Config::int('health_due_soon_days', 7);
-            if ($isFinished) $health = 'good';
+            if ($isFinished || $isPaused) $health = 'good';
             elseif ($isOverdue || (($taskStats['overdue'] ?? 0) >= 3)) $health = 'critical';
             elseif (!$isFinished && (($taskStats['overdue'] ?? 0) > 0 || ($taskStats['attention'] ?? 0) > 0)) $health = 'attention';
             elseif (!$isFinished && $end && strtotime($end) <= strtotime('+' . max(1,$days) . ' days') && $percent < 80) $health = 'attention';
@@ -565,12 +599,12 @@ class ProjectService
         return [
             'id'=>(int)$row['id'],'name'=>(string)($row['name']??''),'code'=>(string)($row['code']??''),'content'=>trim(strip_tags((string)($row['content']??''))),'comment'=>trim(strip_tags((string)($row['comment']??''))),
             'priority'=>(int)($row['priority']??3),'priority_name'=>CommonITILObject::getPriorityName((int)($row['priority']??3)),'percent_done'=>$percent,'auto_percent_done'=>(bool)($row['auto_percent_done']??false),
-            'state'=>$state,'is_finished'=>$isFinished,'manager_id'=>$managerId,'manager_name'=>$managerId?getUserName($managerId):'Não definido','group_id'=>$groupId,'group_name'=>$groupId?Dropdown::getDropdownName('glpi_groups',$groupId):'',
+            'state'=>$state,'is_finished'=>$isFinished,'is_paused'=>$isPaused,'manager_id'=>$managerId,'manager_name'=>$managerId?getUserName($managerId):'Não definido','group_id'=>$groupId,'group_name'=>$groupId?Dropdown::getDropdownName('glpi_groups',$groupId):'',
             'projecttypes_id'=>(int)($row['projecttypes_id']??0),'project_type_name'=>!empty($row['projecttypes_id'])?Dropdown::getDropdownName('glpi_projecttypes',(int)$row['projecttypes_id']):'',
             'entity_id'=>$entityId,'entity_name'=>$entityId?Dropdown::getDropdownName('glpi_entities',$entityId):'Entidade raiz','is_recursive'=>(bool)($row['is_recursive']??false),
             'plan_start_date'=>$start,'plan_end_date'=>$end,'plan_start_ts'=>$start?strtotime($start):null,'plan_end_ts'=>$end?strtotime($end):null,'real_start_date'=>$row['real_start_date']??null,'real_end_date'=>$row['real_end_date']??null,
             'is_overdue'=>$isOverdue,'date_mod'=>$row['date_mod']??null,'date_creation'=>$row['date_creation']??null,'plugin_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/project.php?id='.(int)$row['id'],
-            'is_favorite'=>$favorite,'health_configured'=>$healthConfigured,'health_effective'=>$health,'risk_level'=>(string)($meta['risk_level']??'normal'),'portfolio'=>(string)($meta['portfolio']??''),'sponsor'=>(string)($meta['sponsor']??''),'objective'=>(string)($meta['objective']??''),'execution_mode'=>(string)($meta['execution_mode']??'direct'),'cost_mode'=>(string)($meta['cost_mode']??'hours'),'hours_budget_minutes'=>max(0,(int)($meta['hours_budget_minutes']??0)),'task_stats'=>$taskStats + ['total'=>0,'completed'=>0,'overdue'=>0,'milestones'=>0,'attention'=>0,'avg_progress'=>0],
+            'is_favorite'=>$favorite,'health_configured'=>$healthConfigured,'health_effective'=>$health,'risk_level'=>(string)($meta['risk_level']??'normal'),'portfolio'=>(string)($meta['portfolio']??''),'sponsor'=>(string)($meta['sponsor']??''),'objective'=>(string)($meta['objective']??''),'execution_mode'=>(string)($meta['execution_mode']??'direct'),'cost_mode'=>(string)($meta['cost_mode']??'hours'),'hours_budget_minutes'=>max(0,(int)($meta['hours_budget_minutes']??0)),'hour_rate'=>max(0.0,(float)($meta['hour_rate']??0)),'hour_rate_formatted'=>self::brl(max(0.0,(float)($meta['hour_rate']??0))),'has_hours'=>MetaService::costModeHasHours((string)($meta['cost_mode']??'hours')),'has_money'=>MetaService::costModeHasMoney((string)($meta['cost_mode']??'hours')),'cost_mode_label'=>self::costModeLabel((string)($meta['cost_mode']??'hours')),'task_stats'=>$taskStats + ['total'=>0,'completed'=>0,'overdue'=>0,'milestones'=>0,'attention'=>0,'avg_progress'=>0],
         ];
     }
 
@@ -594,8 +628,123 @@ class ProjectService
                 'assignee_user_id' => max(0, (int) ($row['assignee_user_id'] ?? 0)),
                 'is_milestone' => !empty($row['is_milestone']) ? 1 : 0,
                 'content' => (string) ($row['content'] ?? ''),
+                'allowed_states' => (string) ($row['allowed_states'] ?? ''),
             ]);
         }
+    }
+
+    /**
+     * The native clone copies the tasks but not the plugin data of each task (priority, requester,
+     * attention, allowed states). Tasks are paired by name (and order among equal names).
+     */
+    private function copyClonedTaskMetas(int $sourceId, int $projectId): array
+    {
+        global $DB;
+        $list = static function (int $pid) use ($DB): array {
+            $rows = [];
+            foreach ($DB->request(['SELECT' => ['id', 'name'], 'FROM' => ProjectTask::getTable(), 'WHERE' => ['projects_id' => $pid], 'ORDERBY' => ['id ASC']]) as $row) {
+                $rows[] = ['id' => (int) $row['id'], 'name' => (string) $row['name']];
+            }
+            return $rows;
+        };
+        $source = $list($sourceId);
+        if (!$source) return [];
+        $metas = $this->meta->getTaskMetas(array_column($source, 'id'));
+        $targets = [];
+        $map = [];
+        foreach ($list($projectId) as $row) $targets[$row['name']][] = $row['id'];
+        foreach ($source as $row) {
+            $newId = empty($targets[$row['name']]) ? 0 : (int) array_shift($targets[$row['name']]);
+            if ($newId) $map[$row['id']] = $newId;
+            if (!$newId || !isset($metas[$row['id']])) continue;
+            $m = $metas[$row['id']];
+            $this->meta->saveTaskMeta($newId, [
+                'requester_users_id' => (int) ($m['requester_users_id'] ?? 0),
+                'priority' => (int) ($m['priority'] ?? 3),
+                'attention' => (int) ($m['attention'] ?? 0),
+                'attention_note' => (string) ($m['attention_note'] ?? ''),
+                'allowed_states' => (string) ($m['allowed_states'] ?? ''),
+            ]);
+        }
+        return $map;
+    }
+
+    /**
+     * Removes, from a project just cloned from a template, the tasks the user unchecked.
+     * Children of a removed task are kept and moved to the first kept ancestor (or the root).
+     */
+    private function removeUncheckedTemplateTasks(array $map, array $keepSourceIds): void
+    {
+        global $DB;
+        $remove = [];
+        foreach ($map as $sourceId => $newId) if (!in_array((int) $sourceId, $keepSourceIds, true)) $remove[] = (int) $newId;
+        if (!$remove) return;
+        $parents = [];
+        foreach ($DB->request(['SELECT' => ['id', 'projecttasks_id'], 'FROM' => ProjectTask::getTable(), 'WHERE' => ['id' => array_values($map)]]) as $row) {
+            $parents[(int) $row['id']] = (int) $row['projecttasks_id'];
+        }
+        $keptAncestor = static function (int $id) use ($parents, $remove): int {
+            $guard = 0;
+            while ($id > 0 && in_array($id, $remove, true) && $guard++ < 100) $id = $parents[$id] ?? 0;
+            return $id;
+        };
+        foreach ($parents as $id => $parent) {
+            if (in_array($id, $remove, true) || $parent <= 0 || !in_array($parent, $remove, true)) continue;
+            $DB->update(ProjectTask::getTable(), ['projecttasks_id' => $keptAncestor($parent)], ['id' => $id]);
+        }
+        foreach ($remove as $id) {
+            $task = new ProjectTask();
+            if ($task->getFromDB($id)) $task->delete(['id' => $id], true);
+        }
+    }
+
+    /**
+     * Everything a template defines, to pre-fill the "Novo projeto" form, plus its tasks
+     * (so the user picks which ones are created).
+     */
+    public function getTemplateDefaults(int $templateId): ?array
+    {
+        $project = new Project();
+        if (!$project->getFromDB($templateId) || empty($project->fields['is_template']) || !$project->canViewItem()) return null;
+        $f = $project->fields;
+        $meta = $this->meta->getForProject($templateId);
+        $dt = static fn($v): string => !empty($v) ? date('Y-m-d\\TH:i', strtotime((string) $v)) : '';
+        $rate = (float) ($meta['hour_rate'] ?? 0);
+        $tasks = [];
+        foreach ((new TaskService())->getProjectTasks($templateId) as $t) {
+            $tasks[] = [
+                'id' => (int) $t['id'], 'name' => (string) $t['name'], 'parent_id' => (int) ($t['parent_id'] ?? 0),
+                'type_name' => (string) ($t['type_name'] ?? ''), 'is_milestone' => !empty($t['is_milestone']),
+                'planned_hours' => (float) ($t['planned_duration_hours'] ?? 0),
+            ];
+        }
+        return [
+            'id' => $templateId,
+            'name' => (string) ($f['template_name'] ?: $f['name']),
+            'fields' => [
+                'code' => (string) ($f['code'] ?? ''),
+                'projecttypes_id' => (int) ($f['projecttypes_id'] ?? 0),
+                'projectstates_id' => (int) ($f['projectstates_id'] ?? 0),
+                'priority' => (int) ($f['priority'] ?? 3),
+                'users_id' => (int) ($f['users_id'] ?? 0),
+                'groups_id' => (int) ($f['groups_id'] ?? 0),
+                'content' => trim(strip_tags((string) ($f['content'] ?? ''))),
+                'plan_start_date' => $dt($f['plan_start_date'] ?? null),
+                'plan_end_date' => $dt($f['plan_end_date'] ?? null),
+                'is_recursive' => !empty($f['is_recursive']),
+                'auto_percent_done' => !empty($f['auto_percent_done']),
+                'objective' => (string) ($meta['objective'] ?? ''),
+                'portfolio' => (string) ($meta['portfolio'] ?? ''),
+                'sponsor' => (string) ($meta['sponsor'] ?? ''),
+                'health' => (string) ($meta['health'] ?? 'auto'),
+                'risk_level' => (string) ($meta['risk_level'] ?? 'normal'),
+                'execution_mode' => (string) ($meta['execution_mode'] ?? 'direct'),
+                'cost_mode' => (string) ($meta['cost_mode'] ?? 'hours'),
+                'hours_budget_hours' => ((int) ($meta['hours_budget_minutes'] ?? 0)) > 0 ? (string) round(((int) $meta['hours_budget_minutes']) / 60, 2) : '',
+                'hour_rate' => $rate > 0 ? self::brl($rate) : '',
+            ],
+            'tasks' => $tasks,
+        ];
     }
 
     private function ensureMember(int $projectId, string $type, int $itemId): bool
@@ -608,6 +757,17 @@ class ProjectService
     private function repairClonedTaskStates(int $projectId): void { $stateId=Config::int('default_task_state_id',$this->firstOpenStateId()); if($stateId<=0)return; global $DB; foreach($DB->request(['SELECT'=>['id','projectstates_id'],'FROM'=>ProjectTask::getTable(),'WHERE'=>['projects_id'=>$projectId,'is_deleted'=>0]]) as $row){ if((int)($row['projectstates_id']??0)>0)continue; $task=new ProjectTask(); if($task->getFromDB((int)$row['id'])&&$task->canUpdateItem())$task->update(['id'=>(int)$row['id'],'projectstates_id'=>$stateId,'auto_projectstates'=>0]); } }
     private function canViewMoney(Project $project): bool { $uid=(int)Session::getLoginUserID(); if($uid>0 && (int)($project->fields['users_id']??0)===$uid)return true; if(Session::haveRight('config',UPDATE))return true; if(method_exists($project,'isInTheManagerGroup') && $project->isInTheManagerGroup())return true; return false; }
     private function priority(mixed $v): int { return max(1, min(6, (int) $v)); }
+    /** Brazilian money format (1.234,56), independent of the user's GLPI number format. */
+    public static function brl(float|int|string|null $value): string
+    {
+        return number_format((float) $value, 2, ',', '.');
+    }
+
+    public static function costModeLabel(string $mode): string
+    {
+        return match ($mode) { 'money' => 'Custo financeiro', 'both' => 'Horas + custo', default => 'Contabilização por horas' };
+    }
+
     private function money(mixed $value): float
     {
         $raw = trim((string) $value);

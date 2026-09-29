@@ -44,6 +44,7 @@ class CatalogService
                 'comment' => (string) ($row['comment'] ?? ''),
                 'color' => (string) (($row['color'] ?? '') ?: '#94a3b8'),
                 'is_finished' => !empty($row['is_finished']),
+                'is_paused' => $kind === 'state' && $this->meta->isPausedState($id),
                 'usage' => $this->usage($kind, $id),
             ];
         }
@@ -86,6 +87,8 @@ class CatalogService
         if ($kind === 'state') {
             $percent = !empty($data['is_finished']) ? 100 : max(0, min(100, (int) ($input['percent'] ?? 0)));
             $this->meta->setStateProgress($id, $percent);
+            // A finished state closes the project; it cannot also "pause" it.
+            $this->meta->setStatePaused($id, empty($data['is_finished']) && !empty($input['is_paused']));
             ReferenceService::resetCache();
         }
         return $id;

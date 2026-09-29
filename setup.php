@@ -13,6 +13,9 @@ define('PLUGIN_PROJECTFLOW_GLPI_MIN', '11.0.0');
 define('PLUGIN_PROJECTFLOW_GLPI_MAX', '11.0.99');
 
 define('PLUGIN_PROJECTFLOW_DIR', __DIR__);
+define('PLUGIN_PROJECTFLOW_DISPLAY_NAME', 'Pellissari Project');
+define('PLUGIN_PROJECTFLOW_AUTHOR', 'Kawan Costa');
+define('PLUGIN_PROJECTFLOW_LICENSE', 'Proprietária - uso interno Pellissari e clientes autorizados');
 // GLPI 11 exposes plugin resources through the canonical /plugins/<key> URL,
 // regardless of whether the plugin is physically installed in plugins/ or marketplace/.
 define('PLUGIN_PROJECTFLOW_WEBDIR', ($GLOBALS['CFG_GLPI']['root_doc'] ?? '') . '/plugins/projectflow');
@@ -37,9 +40,46 @@ function plugin_init_projectflow(): void
     $PLUGIN_HOOKS[Hooks::ITEM_UPDATE]['projectflow'] = [
         ProjectTask::class => 'plugin_projectflow_item_update',
     ];
+    // Task progress always follows its state, also in GLPI's native task form.
+    // A paused project (state flagged "pausa o projeto") sends no native notification.
+    $PLUGIN_HOOKS[Hooks::PRE_ITEM_ADD]['projectflow'] = [
+        ProjectTask::class => 'plugin_projectflow_pre_task_save',
+        Project::class => 'plugin_projectflow_pre_project_save',
+    ];
+    $PLUGIN_HOOKS[Hooks::PRE_ITEM_UPDATE]['projectflow'] = [
+        ProjectTask::class => 'plugin_projectflow_pre_task_save',
+        Project::class => 'plugin_projectflow_pre_project_save',
+    ];
+    // A document attached to a task is also attached to its project (Project Flow or native form).
+    $PLUGIN_HOOKS[Hooks::ITEM_ADD]['projectflow'] = [
+        Document_Item::class => 'plugin_projectflow_document_item_add',
+    ];
 
     if (!Session::getLoginUserID()) {
         return;
+    }
+    // GLPI only refreshes name/author/license stored in glpi_plugins when the version changes; sync
+    // them once here so the plugins screen shows them without a version bump/reinstall.
+    try {
+        $pfInfo = ['name' => PLUGIN_PROJECTFLOW_DISPLAY_NAME, 'author' => PLUGIN_PROJECTFLOW_AUTHOR, 'license' => PLUGIN_PROJECTFLOW_LICENSE];
+        $pfStamp = sha1(implode('|', $pfInfo));
+        if (\GlpiPlugin\Projectflow\Config::get('plugin_info_stamp', '') !== $pfStamp
+            && $GLOBALS['DB']->tableExists('glpi_plugin_projectflow_configs')) {
+            $GLOBALS['DB']->update('glpi_plugins', $pfInfo, ['directory' => 'projectflow']);
+            \GlpiPlugin\Projectflow\Config::set('plugin_info_stamp', $pfStamp);
+        }
+    } catch (\Throwable) {
+    }
+    // One-shot: complete tasks that have a single planned date, so they appear in GLPI's planning.
+    try {
+        if (!\GlpiPlugin\Projectflow\Config::bool('planning_dates_repaired', false) && $GLOBALS['DB']->tableExists('glpi_plugin_projectflow_configs')) {
+            include_once PLUGIN_PROJECTFLOW_DIR . '/hook.php';
+            if (function_exists('plugin_projectflow_repair_task_planning_dates')) {
+                plugin_projectflow_repair_task_planning_dates();
+            }
+        }
+    } catch (\Throwable) {
+        // never block GLPI because of this maintenance step
     }
 
     $replaceNative = plugin_projectflow_replaces_native_projects();
@@ -201,10 +241,10 @@ function plugin_projectflow_display(string $template, array $variables = []): vo
 function plugin_version_projectflow(): array
 {
     return [
-        'name' => 'Project Flow',
+        'name' => PLUGIN_PROJECTFLOW_DISPLAY_NAME,
         'version' => PLUGIN_PROJECTFLOW_VERSION,
-        'author' => 'Kawan Costa de Santana',
-        'license' => 'GPLv3+',
+        'author' => PLUGIN_PROJECTFLOW_AUTHOR,
+        'license' => PLUGIN_PROJECTFLOW_LICENSE,
         'homepage' => '',
         'requirements' => [
             'glpi' => ['min' => PLUGIN_PROJECTFLOW_GLPI_MIN, 'max' => PLUGIN_PROJECTFLOW_GLPI_MAX],

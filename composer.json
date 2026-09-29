@@ -2,10 +2,10 @@
   "name": "projectflow/glpi-projectflow",
   "description": "Operational project management for GLPI 11: execution, hours, meetings, weekly reports, teams, contracts and native project integration.",
   "type": "glpi-plugin",
-  "license": "GPL-3.0-or-later",
+  "license": "proprietary",
   "authors": [
     {
-      "name": "Kawan Costa de Santana"
+      "name": "Kawan Costa"
     }
   ],
   "require": {

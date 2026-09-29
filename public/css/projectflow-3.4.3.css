@@ -1839,7 +1839,7 @@ button.pf-kpi { width: 100%; }
 /* Scrollable modals whose header/body/footer are wrapped in a <form>: Bootstrap only makes
    .modal-body scroll when it is a direct flex child of .modal-content, so the form must
    carry the flex layout itself. */
-.modal-dialog-scrollable .pf-modal-content { max-height: calc(100vh - 2rem); overflow: hidden; }
+.modal-dialog-scrollable .pf-modal-content { max-height: calc(100vh - 3.5rem); overflow: hidden; }
 .modal-dialog-scrollable .pf-modal-content > form { display: flex; flex-direction: column; min-height: 0; max-height: 100%; overflow: hidden; flex: 1 1 auto; }
 .modal-dialog-scrollable .pf-modal-content > form > .modal-header,
 .modal-dialog-scrollable .pf-modal-content > form > .modal-footer { flex-shrink: 0; }
@@ -1856,3 +1856,399 @@ button.pf-kpi { width: 100%; }
 .pf-catalog-list li:last-child { border-bottom: 0; }
 .pf-catalog-list small { display: block; color: var(--pf-muted); font-size: 12px; }
 .pf-catalog-usage { min-width: 28px; padding: 1px 8px; border-radius: 999px; text-align: center; font-size: 12px; font-weight: 600; background: color-mix(in srgb, var(--pf-muted) 12%, transparent); }
+
+/* Hours per task */
+.pf-task-hours { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; font-size: 11px; font-weight: 600; color: var(--pf-muted); }
+.pf-hours-bar { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--pf-muted) 15%, transparent); overflow: hidden; }
+.pf-hours-bar span { display: block; height: 100%; border-radius: inherit; background: var(--pf-primary); }
+.pf-hours-bar.is-over span { background: var(--pf-danger, #dc2626); }
+.pf-hours-table tfoot th { border-top: 2px solid var(--pf-border); }
+
+/* Project documents: origin */
+.pf-doc-origin { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 11px; color: var(--pf-muted); }
+.pf-doc-origin a { color: inherit; text-decoration: underline dotted; }
+
+/* AI report */
+.pf-report-scope { max-width: 220px; }
+.pf-report-meta { padding: 6px 2px 0; }
+@keyframes pf-spin { to { transform: rotate(360deg); } }
+.pf-spin { display: inline-block; animation: pf-spin 1s linear infinite; }
+
+/* Task popup (Minhas tarefas) */
+.pf-task-popup-dialog { max-width: min(1500px, 96vw); margin: 1.5vh auto; }
+#pf-task-popup .modal-content { height: 97vh; overflow: hidden; }
+#pf-task-popup .modal-body { position: relative; flex: 1 1 auto; }
+#pf-task-popup-frame { display: block; width: 100%; height: 100%; border: 0; background: var(--pf-surface, #fff); }
+.pf-task-popup-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--pf-muted); background: var(--pf-surface, #fff); }
+.pf-task-ticket-row { cursor: pointer; }
+body.in_modal #page { padding: 0 !important; }
+.pf-native-task-v34.is-embedded { margin: 0; }
+
+/* Task panel: read-only progress (driven by state) */
+.pf34-progress-readonly { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 10px; min-height: 38px; padding: 4px 2px; }
+.pf34-progress-readonly strong { font-size: 14px; }
+.pf34-progress-readonly .pf34-mini-progress { margin: 0; }
+.pf34-progress-readonly small { grid-column: 1 / -1; font-size: 11px; color: var(--pf-muted); }
+
+/* Save bar below "Atores", sticky at the bottom of the properties panel */
+#projectflow-task .pf34-properties > .pf34-savebar { margin: 0; box-shadow: 0 -6px 14px rgba(15, 23, 42, .06); }
+
+/* Settings tabs */
+.pf-config-tabs { display: flex; gap: 4px; margin: 0 0 16px; padding: 6px; overflow-x: auto; background: var(--pf-surface); border: 1px solid var(--pf-border); border-radius: 12px; }
+.pf-config-tabs button { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: transparent; color: var(--pf-muted); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.pf-config-tabs button i { font-size: 17px; }
+.pf-config-tabs button:hover { color: var(--pf-text); background: color-mix(in srgb, var(--pf-primary) 10%, transparent); }
+.pf-config-tabs button.is-active { color: var(--pf-text); background: color-mix(in srgb, var(--pf-primary) 20%, transparent); box-shadow: inset 0 -2px 0 var(--pf-primary); }
+
+/* ==========================================================================
+   Form density (3.4.3): one compact size for every field of the plugin.
+   GLPI/Tabler defaults (~40px, 15px text) looked oversized in dense panels.
+   Scoped to Project Flow screens and modals only.
+   ========================================================================== */
+.pf-app { --pf-field-h: 34px; --pf-field-h-sm: 30px; --pf-field-fs: .8125rem; --pf-field-fs-sm: .75rem; }
+.pf-app .form-control,
+.pf-app .form-select {
+  height: var(--pf-field-h);
+  min-height: var(--pf-field-h);
+  padding: .3rem .65rem;
+  font-size: var(--pf-field-fs);
+  line-height: 1.35;
+  border-radius: 8px;
+}
+.pf-app .form-select { padding-right: 2rem; background-position: right .55rem center; background-size: 14px 10px; }
+.pf-app select[multiple].form-select, .pf-app select[size].form-select { height: auto; }
+.pf-app textarea.form-control { height: auto; min-height: 60px; padding-top: .4rem; padding-bottom: .4rem; line-height: 1.45; resize: vertical; }
+.pf-app textarea.form-control[rows="1"] { min-height: var(--pf-field-h); }
+.pf-app .form-control-sm, .pf-app .form-select-sm { height: var(--pf-field-h-sm); min-height: var(--pf-field-h-sm); font-size: var(--pf-field-fs-sm); padding-top: .2rem; padding-bottom: .2rem; }
+.pf-app textarea.form-control-sm { height: auto; min-height: var(--pf-field-h-sm); }
+.pf-app .form-control-color { width: 100%; max-width: 110px; padding: .2rem; }
+.pf-app input[type="number"].form-control { max-width: 100%; }
+.pf-app .input-group > .form-control, .pf-app .input-group > .form-select { height: var(--pf-field-h); }
+.pf-app .input-group-text { height: var(--pf-field-h); padding: 0 .6rem; font-size: var(--pf-field-fs-sm); border-radius: 8px; }
+.pf-app .input-group > :not(:first-child):not(.dropdown-menu) { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.pf-app .input-group > :not(:last-child):not(.dropdown-toggle):not(.dropdown-menu) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.pf-app .form-label { margin-bottom: .25rem; font-size: .75rem; font-weight: 600; }
+.pf-app .form-text, .pf-app small.text-muted { font-size: .7rem; }
+.pf-app .form-check { min-height: 1.25rem; font-size: var(--pf-field-fs); }
+.pf-app .btn:not(.btn-sm):not(.btn-lg):not(.btn-close):not(.pf-icon-btn) { min-height: var(--pf-field-h); padding-top: .3rem; padding-bottom: .3rem; font-size: var(--pf-field-fs); }
+.pf-app .btn-sm { min-height: var(--pf-field-h-sm); font-size: var(--pf-field-fs-sm); }
+.pf-app .pf-icon-btn:not(.btn-sm) { width: var(--pf-field-h); height: var(--pf-field-h); min-height: var(--pf-field-h); padding: 0; display: inline-grid; place-items: center; }
+.pf-app .row.g-3 { --bs-gutter-y: .75rem; }
+
+/* search boxes and filter bars */
+.pf-app .pf-search-wrap input, .pf-app .pf-search input { min-height: var(--pf-field-h); height: var(--pf-field-h); padding-left: 32px; }
+.pf-app .pf-search > i, .pf-app .pf-search-wrap > i { font-size: 15px; }
+.pf-app .pf-filter-select { max-width: 220px; }
+.pf-app .pf-report-toolbar .form-select { max-width: 240px; }
+
+/* modals */
+.pf-app .modal-body { padding: 1rem 1.15rem; }
+.pf-app .pf-form-section + .pf-form-section { margin-top: .9rem; }
+.pf-app .pf-form-section h3 { margin-bottom: .6rem; font-size: .82rem; }
+
+/* task screen side panel (label/field rows) */
+#projectflow-task .pf34-field-row .form-control,
+#projectflow-task .pf34-field-row .form-select,
+#projectflow-task .pf34-readonly-field { height: 32px; min-height: 32px; font-size: .78rem; }
+#projectflow-task .pf34-field-row textarea.form-control { height: auto; min-height: 72px; }
+#projectflow-task .pf34-actor-form .form-select { height: 32px; min-height: 32px; }
+#projectflow-task .pf-quick-mode textarea, #projectflow-task .pf-itil-reply-composer textarea { min-height: 84px; }
+
+/* settings */
+.pf-app .pf-config-card .form-control, .pf-app .pf-config-card .form-select { max-width: 420px; }
+.pf-app .pf-catalog-form .form-control-color { max-width: 64px; }
+/* report paper keeps its document size (not a regular field) */
+.pf-app .pf-report-paper textarea.form-control { min-height: 560px; padding: 24px; font-size: 12px; line-height: 1.6; border: 0; border-radius: 0; }
+/* filter bars: one flexible row that wraps cleanly instead of fixed grids */
+.pf-app .pf-task-filterbar, .pf-app .pf-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pf-app .pf-task-filterbar .pf-search, .pf-app .pf-filterbar .pf-search { flex: 2 1 260px; min-width: 220px; }
+.pf-app .pf-task-filterbar > .form-select, .pf-app .pf-filterbar > .form-select { flex: 1 1 150px; max-width: 220px; }
+.pf-app .pf-task-filterbar > .btn, .pf-app .pf-filterbar > .btn, .pf-app .pf-filterbar > .pf-view-switch { flex: 0 0 auto; }
+@media (max-width: 575px) { .pf-app .pf-task-filterbar > .form-select, .pf-app .pf-filterbar > .form-select { max-width: none; } }
+/* template task rows: shrink to the modal width instead of overflowing */
+.pf-app .pf-template-task-head, .pf-app .pf-template-task-row { grid-template-columns: minmax(0, 3fr) minmax(0, 1.3fr) 82px minmax(0, 1.5fr) 40px 32px; gap: 6px; }
+.pf-app .pf-template-task-row { padding: 6px; }
+.pf-app .pf-template-task-row .form-check { display: flex; justify-content: center; }
+/* icon buttons side by side; catalog names inline with their color dot */
+.pf-app .pf-icon-btn { display: inline-grid; place-items: center; vertical-align: middle; }
+.pf-app .btn-sm.pf-icon-btn { width: var(--pf-field-h-sm); height: var(--pf-field-h-sm); min-height: var(--pf-field-h-sm); padding: 0; }
+.pf-app .pf-catalog-table td strong { display: inline; }
+.pf-app .pf-catalog-table td { padding-top: .45rem; padding-bottom: .45rem; }
+
+/* Number fields hold short values (%, hours, minutes, IDs, limits): keep them narrow
+   instead of stretching across the whole column. */
+.pf-app input[type="number"].form-control { width: 110px; max-width: 100%; flex: 0 0 auto; text-align: right; font-variant-numeric: tabular-nums; }
+.pf-app input[type="number"][name="hours_budget_hours"].form-control,
+.pf-app input[type="number"][name="dashboard_limit"].form-control,
+.pf-app input[type="number"][name="ticket_id"].form-control { width: 140px; }
+/* number + suffix ("%", "dias", "h"): the group shrinks with the field */
+.pf-app .input-group:has(> input[type="number"]) { width: auto; display: inline-flex; flex-wrap: nowrap; max-width: 100%; }
+.pf-app .input-group:has(> input[type="number"]) > input[type="number"].form-control { flex: 0 0 auto; }
+/* inside grids built for them (template task rows) the cell already sets the width */
+.pf-app .pf-template-task-row input[type="number"].form-control { width: 100%; }
+
+/* ==========================================================================
+   Field widths by content (3.4.3). Every field gets the width its value needs;
+   only free text (names, titles, descriptions, search) spans the full column.
+   ========================================================================== */
+/* selects: enumerations (state, priority, type, mode, user, group, entity...) */
+.pf-app select.form-select { width: 100%; max-width: 240px; }
+/* dates and times */
+.pf-app input[type="date"].form-control,
+.pf-app input[type="datetime-local"].form-control,
+.pf-app input[type="time"].form-control { width: 200px; max-width: 100%; }
+/* short text */
+.pf-app input[name="code"].form-control { width: 160px; max-width: 100%; }
+.pf-app input[name="portfolio"].form-control,
+.pf-app input[name="sponsor"].form-control,
+.pf-app input[name="ai_gemini_model"].form-control,
+.pf-app input[name="ai_gemini_fallback_model"].form-control { width: 100%; max-width: 240px; }
+.pf-app input[name="ai_gemini_key"].form-control { width: 100%; max-width: 360px; }
+.pf-app input[type="color"].form-control { width: 56px; }
+/* longer lists where the option text matters (tasks, projects, documents, assets) */
+.pf-app select[name="target_id"].form-select,
+.pf-app select[name="source_project_id"].form-select,
+.pf-app select[name="template_id"].form-select,
+.pf-app select[name="document_id"].form-select,
+.pf-app select[name="contract_id"].form-select,
+.pf-app select[name="projecttasks_id"].form-select { max-width: 360px; }
+/* the input-group around a model field keeps the "Testar" button next to it */
+.pf-app .input-group:has(> input[name="ai_gemini_model"]) { width: auto; display: inline-flex; flex-wrap: nowrap; max-width: 100%; }
+.pf-app .input-group:has(> input[name="ai_gemini_model"]) > input { width: 220px; flex: 0 0 auto; }
+/* task side panel: compact label/field column, fields fill it */
+#projectflow-task .pf34-field-row .form-control,
+#projectflow-task .pf34-field-row .form-select { width: 100%; max-width: none; }
+#projectflow-task .pf34-actor-form .form-select { max-width: none; }
+/* grids that size their own cells */
+.pf-app .pf-template-task-row .form-select, .pf-app .pf-template-task-row .form-control { max-width: none; width: 100%; }
+/* filter bars keep their own flexible sizing */
+.pf-app .pf-filterbar > .form-select, .pf-app .pf-task-filterbar > .form-select { width: auto; }
+/* entry forms (execution, meeting, dependency...): fields keep their natural width */
+.pf-app .pf-itil-entry-form > div { min-width: 0; flex: 0 0 auto; }
+.pf-app .pf-itil-entry-form > .pf-grow { flex: 1 1 220px; }
+.pf-app .pf-itil-entry-form input[type="number"].form-control,
+.pf-app .pf-inline-form input[type="number"].form-control,
+.pf-app .pf-quick-mode input[type="number"].form-control { width: 80px; }
+.pf-app .pf-inline-form .form-control:not([type="number"]):not([type="date"]):not([type="datetime-local"]), .pf-app .pf-inline-form .form-select { flex: 1 1 180px; }
+/* empty messages inside data lists span the whole row */
+.pf-app .pf-itil-data-list > .pf-empty-inline, .pf-app .pf-itil-data-list > .pf-empty-state { display: block; grid-column: 1 / -1; }
+
+/* Execução: alternância Kanban / Lista */
+.pf-app .pf-view-toggle { flex:0 0 auto; }
+.pf-app .pf-view-toggle .btn { display:inline-flex; align-items:center; gap:.3rem; white-space:nowrap; }
+.pf-app .pf-view-toggle .btn.active { background:var(--pf-primary,#f5b82e); border-color:var(--pf-primary,#f5b82e); color:#1f2937; }
+.pf-app [data-pf-view-pane="list"].mt-3 { margin-top:0 !important; }
+
+/* Estados disponíveis nas tarefas (projeto / template) */
+.pf-app .pf-state-chips { display:flex; flex-wrap:wrap; gap:.4rem; margin-bottom:.25rem; }
+.pf-app .pf-state-chip { display:inline-flex; align-items:center; gap:.4rem; padding:.3rem .65rem; border:1px solid var(--pf-border,#e5e7eb); border-radius:999px; font-size:.8125rem; cursor:pointer; user-select:none; background:var(--pf-surface,#fff); }
+.pf-app .pf-state-chip .form-check-input { margin:0; float:none; }
+.pf-app .pf-state-chip:has(input:checked) { border-color:color-mix(in srgb, var(--pf-primary) 55%, var(--pf-border,#e5e7eb)); background:color-mix(in srgb, var(--pf-primary) 10%, transparent); }
+.pf-app .pf-state-chip:has(input:not(:checked)) { opacity:.6; }
+
+/* Estados permitidos por tarefa */
+.pf-app .pf-board-column.pf-drop-blocked { opacity:.45; }
+.pf-app .pf-board-column.pf-drop-blocked .pf-dropzone { cursor:not-allowed; }
+.pf-app .pf-template-task-states { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; }
+.pf-app .pf-template-task-states .pf-state-chips { margin:0; }
+.pf-app .pf-template-task-states-label { font-size:.75rem; color:var(--pf-muted,#6b7280); white-space:nowrap; }
+.pf-app .pf-template-task-states .pf-state-chip { padding:.15rem .5rem; font-size:.75rem; }
+.pf-app .pf34-field-row.pf-task-states-picker .pf-state-chip { padding:.15rem .5rem; font-size:.75rem; }
+.pf-app .pf-state-chip.is-static { cursor:default; opacity:1; }
+/* Horas + custo */
+.pf-app input.pf-money-input.form-control { width:140px; max-width:100%; flex:0 0 auto; }
+.pf-app .pf-cost-form input[type="date"].form-control { width:160px; flex:0 0 auto; }
+.pf-app .pf-accounting-options { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+/* Aba Horas e custos: indicadores agrupados */
+.pf-app .pf-hk-group { margin-bottom:14px; }
+.pf-app .pf-hk-group-title { display:flex; align-items:center; gap:6px; font-size:.72rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--tblr-secondary-color,#6b7280); margin:0 0 8px 2px; }
+.pf-app .pf-hk-row { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; }
+.pf-app .pf-hk { display:flex; flex-direction:column; gap:4px; min-width:0; padding:14px 16px; border:1px solid var(--pf-border); border-radius:12px; background:var(--pf-surface); }
+.pf-app .pf-hk-head { display:flex; align-items:center; gap:8px; font-size:.78rem; color:var(--tblr-secondary-color,#6b7280); }
+.pf-app .pf-hk-head i { display:grid; place-items:center; width:28px; height:28px; flex:0 0 28px; border-radius:8px; font-size:16px; color:var(--pf-primary); background:color-mix(in srgb, var(--pf-primary) 12%, transparent); }
+.pf-app .pf-hk strong { font-size:1.35rem; line-height:1.2; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pf-app .pf-hk small { font-size:.74rem; color:var(--tblr-secondary-color,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pf-app .pf-hk.is-highlight { border-color:color-mix(in srgb, var(--pf-primary) 45%, var(--pf-border)); background:color-mix(in srgb, var(--pf-primary) 7%, var(--pf-surface)); }
+.pf-app .pf-hk.is-overrun { border-color:rgba(220,38,38,.35); background:rgba(220,38,38,.05); }
+.pf-app .pf-hk.is-overrun strong { color:#dc2626; }
+.pf-app .pf-hk-bar { height:5px; border-radius:999px; background:color-mix(in srgb, var(--pf-border) 70%, transparent); overflow:hidden; margin-top:2px; }
+.pf-app .pf-hk-bar span { display:block; height:100%; border-radius:inherit; background:var(--pf-primary); }
+.pf-app .pf-hk-bar.is-over span { background:#dc2626; }
+@media (max-width:1100px) { .pf-app .pf-hk-row { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+@media (max-width:560px) { .pf-app .pf-hk-row { grid-template-columns:1fr; } }
+/* Pulso do projeto: sempre numa linha só, qualquer quantidade de blocos (5 ou 6) */
+@media (min-width:1201px) {
+  .pf-app .pf-project-pulse { grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); }
+}
+.pf-app .pf-project-pulse small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* Painel: indicadores (Visíveis, Ativos, Em atraso...) */
+.pf-app .pf-kpi-grid { gap:12px; }
+.pf-app .pf-kpi { position:relative; display:flex; flex-direction:row; align-items:center; justify-content:flex-start; gap:14px; min-height:76px; padding:14px 16px; overflow:hidden; text-align:left; border-radius:14px; cursor:pointer; }
+.pf-app .pf-kpi::before { content:""; position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:0 3px 3px 0; background:var(--pf-kpi-accent, var(--pf-primary)); opacity:.85; }
+.pf-app .pf-kpi .pf-kpi-icon { --pf-kpi-c: var(--pf-kpi-accent, var(--pf-primary)); width:40px; height:40px; flex:0 0 40px; margin:0; border-radius:11px; font-size:20px; color:var(--pf-kpi-c); background:color-mix(in srgb, var(--pf-kpi-c) 12%, transparent); }
+.pf-app .pf-kpi > span:last-child { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; text-align:left; }
+.pf-app .pf-kpi small { order:0; font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--pf-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+.pf-app .pf-kpi strong { font-size:24px; font-weight:700; line-height:1.05; letter-spacing:-.02em; color:var(--tblr-body-color, #1f2937); }
+.pf-app .pf-kpi-danger { --pf-kpi-accent: var(--pf-danger, #d63939); }
+.pf-app .pf-kpi-warning { --pf-kpi-accent: var(--pf-warning, #f59f00); }
+.pf-app .pf-kpi:hover { transform:translateY(-1px); border-color:color-mix(in srgb, var(--pf-kpi-accent, var(--pf-primary)) 40%, var(--pf-border)); }
+.pf-app .pf-kpi.is-selected { border-color:color-mix(in srgb, var(--pf-kpi-accent, var(--pf-primary)) 60%, var(--pf-border)); background:color-mix(in srgb, var(--pf-kpi-accent, var(--pf-primary)) 6%, var(--pf-surface)); }
+.pf-app .pf-kpi[data-pf-quick="active"] { --pf-kpi-accent:#2fb344; }
+.pf-app .pf-kpi[data-pf-quick="favorites"] { --pf-kpi-accent:#e8a200; }
+.pf-app a.pf-kpi { --pf-kpi-accent:#4263eb; text-decoration:none; }
+
+/* Tarefa: formulário de reunião completo */
+#projectflow-task .pf-meeting-form-grid { display:grid; grid-template-columns:minmax(0,1fr) 210px 80px 80px; gap:.5rem .6rem; align-items:end; }
+#projectflow-task .pf-meeting-form-grid label { display:grid; gap:.2rem; min-width:0; color:var(--tblr-secondary, #64748b); font-size:.67rem; font-weight:600; }
+#projectflow-task .pf-meeting-form-grid .form-control { width:100% !important; max-width:none !important; min-width:0; }
+#projectflow-task .pf-meeting-form-grid .pf-mf-num .form-control { text-align:right; }
+#projectflow-task .pf-meeting-form-grid .pf-mf-full { grid-column:1 / -1; }
+#projectflow-task .pf-meeting-form-grid .pf-mf-pair { grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr; gap:.5rem .6rem; }
+#projectflow-task .pf-meeting-form-grid textarea.form-control { min-height:58px; resize:vertical; }
+@media (max-width:760px) {
+  #projectflow-task .pf-meeting-form-grid { grid-template-columns:1fr 1fr; }
+  #projectflow-task .pf-meeting-form-grid .pf-mf-title, #projectflow-task .pf-meeting-form-grid .pf-mf-date { grid-column:1 / -1; }
+  #projectflow-task .pf-meeting-form-grid .pf-mf-pair { grid-template-columns:1fr; }
+}
+
+/* Tarefa: formulário de execução (adicionar e editar) */
+#projectflow-task .pf-exec-form-grid { display:grid; grid-template-columns:170px 80px 80px minmax(0,1fr); gap:.5rem .6rem; align-items:end; }
+#projectflow-task .pf-exec-form-grid label { display:grid; gap:.2rem; min-width:0; color:var(--tblr-secondary, #64748b); font-size:.67rem; font-weight:600; }
+#projectflow-task .pf-exec-form-grid .form-control { width:100% !important; max-width:none !important; min-width:0; }
+#projectflow-task .pf-exec-form-grid .pf-ef-num .form-control { text-align:right; }
+@media (max-width:760px) {
+  #projectflow-task .pf-exec-form-grid { grid-template-columns:1fr 1fr; }
+  #projectflow-task .pf-exec-form-grid label:first-child, #projectflow-task .pf-exec-form-grid .pf-ef-grow { grid-column:1 / -1; }
+}
+/* Abas Execuções / Reuniões: só edição */
+#projectflow-task .pf-add-hint { display:flex; align-items:center; gap:.35rem; padding:.45rem .65rem; border-radius:8px; background:color-mix(in srgb, var(--pf-primary) 7%, transparent); }
+#projectflow-task .pf-edit-entry-form { margin-bottom:.9rem; padding:.8rem .9rem; border:1px solid color-mix(in srgb, var(--pf-primary) 40%, var(--pf-border)); border-radius:12px; background:color-mix(in srgb, var(--pf-primary) 4%, var(--pf-surface)); }
+#projectflow-task .pf-edit-entry-title { display:flex; align-items:center; gap:.35rem; margin-bottom:.6rem; font-weight:700; font-size:.85rem; }
+#projectflow-task .pf-edit-entry-form .pf-form-actions { display:flex; justify-content:flex-end; gap:.5rem; margin-top:.7rem; }
+
+/* Minhas tarefas: indicadores da fila (mesmo visual do painel) */
+.pf-app .pf-queue-kpis { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:12px; margin:0 0 14px; }
+.pf-app .pf-qk { --pf-qk: var(--pf-primary); position:relative; display:flex; align-items:center; gap:12px; min-width:0; min-height:70px; padding:12px 14px 12px 16px; overflow:hidden; text-align:left; color:inherit; border:1px solid var(--pf-border); border-radius:14px; background:var(--pf-surface); box-shadow:0 3px 14px rgba(31,41,55,.035); cursor:pointer; transition:.15s ease; }
+.pf-app .pf-qk::before { content:""; position:absolute; left:0; top:12px; bottom:12px; width:3px; border-radius:0 3px 3px 0; background:var(--pf-qk); opacity:.85; }
+.pf-app .pf-qk-icon { display:grid; place-items:center; width:38px; height:38px; flex:0 0 38px; border-radius:10px; font-size:19px; color:var(--pf-qk); background:color-mix(in srgb, var(--pf-qk) 12%, transparent); }
+.pf-app .pf-qk-text { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; }
+.pf-app .pf-qk small { font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--pf-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+.pf-app .pf-qk strong { font-size:22px; font-weight:700; line-height:1.05; letter-spacing:-.02em; }
+.pf-app .pf-qk:hover { transform:translateY(-1px); border-color:color-mix(in srgb, var(--pf-qk) 40%, var(--pf-border)); box-shadow:0 8px 25px rgba(31,41,55,.07); }
+.pf-app .pf-qk.is-selected { border-color:color-mix(in srgb, var(--pf-qk) 60%, var(--pf-border)); background:color-mix(in srgb, var(--pf-qk) 6%, var(--pf-surface)); }
+.pf-app .pf-qk-overdue { --pf-qk: var(--pf-danger, #d63939); }
+.pf-app .pf-qk-attention { --pf-qk: var(--pf-warning, #f59f00); }
+.pf-app .pf-qk-today { --pf-qk: #4263eb; }
+.pf-app .pf-qk-next7 { --pf-qk: #2fb344; }
+@media (max-width:1100px) { .pf-app .pf-queue-kpis { grid-template-columns:repeat(3, minmax(0,1fr)); } }
+@media (max-width:640px) { .pf-app .pf-queue-kpis { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+
+/* Criar projeto / template: formulário em etapas (abas) */
+.pf-app .pf-form-tabs { position:sticky; top:-1rem; z-index:3; display:flex; gap:4px; margin:-.25rem 0 1.1rem; padding:6px; overflow-x:auto; background:var(--pf-surface); border:1px solid var(--pf-border); border-radius:12px; box-shadow:0 4px 14px rgba(31,41,55,.05); }
+.pf-app .pf-form-tabs button { display:inline-flex; align-items:center; gap:8px; height:38px; padding:0 14px; border:0; border-radius:9px; background:transparent; color:var(--pf-muted); font-size:13px; font-weight:600; white-space:nowrap; cursor:pointer; transition:.15s ease; }
+.pf-app .pf-form-tabs button i { font-size:17px; }
+.pf-app .pf-form-tab-step { display:grid; place-items:center; width:20px; height:20px; border-radius:50%; font-size:11px; font-weight:700; color:var(--pf-muted); background:color-mix(in srgb, var(--pf-muted) 14%, transparent); }
+.pf-app .pf-form-tabs button:hover { color:var(--pf-text); background:color-mix(in srgb, var(--pf-primary) 10%, transparent); }
+.pf-app .pf-form-tabs button.is-active { color:var(--pf-text); background:color-mix(in srgb, var(--pf-primary) 18%, transparent); box-shadow:inset 0 -2px 0 var(--pf-primary); }
+.pf-app .pf-form-tabs button.is-active .pf-form-tab-step { color:#1f2937; background:var(--pf-primary); }
+.pf-app .pf-form-tabs button.is-done .pf-form-tab-step { color:#fff; background:#2fb344; }
+.pf-app [data-pf-form-pane] { min-height:340px; padding:0 .15rem; border:0 !important; margin:0 !important; }
+.pf-app .pf-pane-lead { margin:0 0 1rem; color:var(--pf-muted); font-size:.82rem; }
+.pf-app .pf-form-tabs-footer { display:flex; align-items:center; gap:.5rem; }
+.pf-app .pf-form-tabs-footer .pf-footer-spacer { flex:1 1 auto; }
+#pf-project-create-modal .modal-header, #pf-template-new-modal .modal-header { padding-bottom:.85rem; }
+@media (max-width:640px) { .pf-app .pf-form-tabs button > span:last-child { display:none; } }
+
+/* Novo projeto: template como autocomplete + seleção de tarefas */
+.pf-app .pf-form-tab-badge { margin-left:2px; padding:1px 6px; border-radius:999px; font-style:normal; font-size:10px; font-weight:700; color:#1f2937; background:color-mix(in srgb, var(--pf-primary) 35%, transparent); }
+.pf-app .pf-template-applied { display:flex; align-items:flex-start; gap:10px; margin:0 0 1rem; padding:.65rem .8rem; border:1px solid color-mix(in srgb, var(--pf-primary) 45%, var(--pf-border)); border-radius:10px; background:color-mix(in srgb, var(--pf-primary) 8%, var(--pf-surface)); }
+.pf-app .pf-template-applied > i { font-size:20px; color:var(--pf-primary); margin-top:1px; }
+.pf-app .pf-template-applied strong { display:block; font-size:.85rem; }
+.pf-app .pf-template-applied small { display:block; color:var(--pf-muted); font-size:.76rem; }
+.pf-app .pf-tpl-tasks-empty { display:flex; flex-direction:column; align-items:center; gap:4px; padding:2.2rem 1rem; text-align:center; color:var(--pf-muted); border:1px dashed var(--pf-border); border-radius:12px; }
+.pf-app .pf-tpl-tasks-empty i { font-size:28px; }
+.pf-app .pf-tpl-tasks-empty strong { color:var(--pf-text); }
+.pf-app .pf-tpl-tasks-toolbar { display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin-bottom:.6rem; font-size:.8rem; color:var(--pf-muted); }
+.pf-app .pf-tpl-task-list { display:flex; flex-direction:column; border:1px solid var(--pf-border); border-radius:12px; overflow:hidden; max-height:380px; overflow-y:auto; }
+.pf-app .pf-tpl-task { display:flex; align-items:center; gap:10px; margin:0; padding:.55rem .8rem .55rem calc(.8rem + var(--pf-level, 0) * 22px); border-bottom:1px solid var(--pf-border); background:var(--pf-surface); cursor:pointer; transition:background .12s ease, opacity .12s ease; }
+.pf-app .pf-tpl-task:last-child { border-bottom:0; }
+.pf-app .pf-tpl-task:hover { background:color-mix(in srgb, var(--pf-primary) 5%, var(--pf-surface)); }
+.pf-app .pf-tpl-task .form-check-input { margin:0; float:none; flex:0 0 auto; width:1.1rem; height:1.1rem; }
+.pf-app .pf-tpl-task-name { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; font-size:.85rem; }
+.pf-app .pf-tpl-task-name i { color:var(--pf-muted); margin-right:4px; }
+.pf-app .pf-tpl-task-meta { display:flex; align-items:center; gap:8px; flex:0 0 auto; font-size:.74rem; color:var(--pf-muted); }
+.pf-app .pf-tpl-task.is-off { opacity:.5; }
+.pf-app .pf-tpl-task.is-off .pf-tpl-task-name { text-decoration:line-through; font-weight:500; }
+
+/* Projeto pausado */
+.pf-app .pf-paused-badge { display:inline-flex; align-items:center; gap:4px; flex:0 0 auto; padding:3px 8px; border-radius:999px; font-size:11px; font-weight:700; color:#b45309; background:rgba(245,159,0,.14); border:1px solid rgba(245,159,0,.35); }
+.pf-app .pf-paused-badge i { font-size:13px; }
+
+/* Tela de templates (v2) */
+.pf-app .pf-tpl-hero { display:flex; align-items:center; justify-content:space-between; gap:24px; margin:0 0 16px; padding:22px 24px; border:1px solid var(--pf-border); border-radius:16px; background:radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--pf-primary) 16%, var(--pf-surface)) 0%, var(--pf-surface) 55%); box-shadow:0 6px 24px rgba(31,41,55,.05); }
+.pf-app .pf-tpl-hero h1 { margin:4px 0 6px; font-size:22px; font-weight:700; letter-spacing:-.01em; }
+.pf-app .pf-tpl-hero p { margin:0; max-width:720px; color:var(--pf-muted); font-size:13px; line-height:1.55; }
+.pf-app .pf-tpl-hero-stats { display:flex; gap:10px; flex:0 0 auto; }
+.pf-app .pf-tpl-hero-stats > div { display:flex; flex-direction:column; align-items:flex-start; min-width:120px; padding:12px 16px; border:1px solid var(--pf-border); border-radius:12px; background:var(--pf-surface); }
+.pf-app .pf-tpl-hero-stats strong { font-size:24px; line-height:1.1; font-weight:700; }
+.pf-app .pf-tpl-hero-stats span { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--pf-muted); }
+.pf-app .pf-tpl-toolbar { display:flex; align-items:center; gap:12px; margin:0 0 14px; }
+.pf-app .pf-tpl-toolbar .pf-search { flex:1 1 auto; max-width:560px; }
+.pf-app .pf-tpl-count { font-size:12px; color:var(--pf-muted); white-space:nowrap; }
+.pf-app .pf-tpl-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; }
+.pf-app .pf-tpl-card { --pf-tpl-accent: var(--pf-primary); position:relative; display:flex; flex-direction:column; gap:12px; min-width:0; padding:18px 18px 16px; border:1px solid var(--pf-border); border-radius:16px; background:var(--pf-surface); box-shadow:0 3px 14px rgba(31,41,55,.04); overflow:hidden; transition:.15s ease; text-align:left; }
+.pf-app .pf-tpl-card::before { content:""; position:absolute; inset:0 0 auto 0; height:4px; background:var(--pf-tpl-accent); opacity:.9; }
+.pf-app .pf-tpl-card:hover { transform:translateY(-2px); border-color:color-mix(in srgb, var(--pf-tpl-accent) 35%, var(--pf-border)); box-shadow:0 10px 28px rgba(31,41,55,.08); }
+.pf-app .pf-tpl-cost-money { --pf-tpl-accent:#2fb344; }
+.pf-app .pf-tpl-cost-both { --pf-tpl-accent:#4263eb; }
+.pf-app .pf-tpl-card-head { display:flex; align-items:flex-start; gap:12px; }
+.pf-app .pf-tpl-card-icon { display:grid; place-items:center; width:42px; height:42px; flex:0 0 42px; border-radius:12px; font-size:21px; color:var(--pf-tpl-accent); background:color-mix(in srgb, var(--pf-tpl-accent) 12%, transparent); }
+.pf-app .pf-tpl-card-title { flex:1 1 auto; min-width:0; }
+.pf-app .pf-tpl-card-title h3 { margin:0; font-size:15px; font-weight:700; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pf-app .pf-tpl-card-sub { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; font-size:11.5px; color:var(--pf-muted); }
+.pf-app .pf-tpl-card-sub > span + span::before { content:"·"; margin-right:6px; }
+.pf-app .pf-tpl-code { font-family:var(--tblr-font-monospace, monospace); font-weight:600; color:var(--pf-text); }
+.pf-app .pf-tpl-desc { margin:0; font-size:12.5px; line-height:1.55; color:var(--pf-text); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:2.9em; }
+.pf-app .pf-tpl-desc.is-empty { color:var(--pf-muted); font-style:italic; }
+.pf-app .pf-tpl-facts { display:grid; grid-template-columns:1fr; gap:7px; margin:0; padding:12px 0 0; list-style:none; border-top:1px dashed var(--pf-border); }
+.pf-app .pf-tpl-facts li { display:flex; align-items:center; gap:7px; min-width:0; font-size:12px; color:var(--pf-muted); }
+.pf-app .pf-tpl-facts li i { flex:0 0 auto; font-size:16px; color:var(--pf-tpl-accent); }
+.pf-app .pf-tpl-facts li span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pf-app .pf-tpl-facts strong { color:var(--pf-text); }
+.pf-app .pf-tpl-card-foot { display:flex; gap:8px; margin-top:auto; padding-top:4px; }
+.pf-app .pf-tpl-card-foot .pf-tpl-use { flex:1 1 auto; justify-content:center; }
+.pf-app .pf-tpl-card-foot .btn { display:inline-flex; align-items:center; gap:6px; }
+.pf-app .pf-tpl-card-new { align-items:center; justify-content:center; gap:6px; min-height:230px; border:2px dashed color-mix(in srgb, var(--pf-primary) 40%, var(--pf-border)); background:color-mix(in srgb, var(--pf-primary) 4%, var(--pf-surface)); box-shadow:none; cursor:pointer; color:var(--pf-muted); font-size:12px; }
+.pf-app .pf-tpl-card-new::before { display:none; }
+.pf-app .pf-tpl-card-new strong { font-size:14px; color:var(--pf-text); }
+.pf-app .pf-tpl-empty-icon { display:grid; place-items:center; width:48px; height:48px; border-radius:14px; font-size:24px; color:var(--pf-primary); background:color-mix(in srgb, var(--pf-primary) 14%, transparent); }
+.pf-app .pf-tpl-empty { display:flex; flex-direction:column; align-items:center; gap:8px; padding:48px 20px; text-align:center; border:2px dashed var(--pf-border); border-radius:16px; background:var(--pf-surface); }
+.pf-app .pf-tpl-empty h3 { margin:6px 0 0; font-size:17px; }
+.pf-app .pf-tpl-empty p { margin:0 0 8px; max-width:460px; color:var(--pf-muted); font-size:13px; }
+.pf-app .pf-tpl-noresult { display:flex; align-items:center; justify-content:center; gap:8px; padding:30px; color:var(--pf-muted); }
+@media (max-width:900px) { .pf-app .pf-tpl-hero { flex-direction:column; align-items:flex-start; } }
+@media (max-width:520px) { .pf-app .pf-tpl-facts { grid-template-columns:1fr; } }
+
+/* Visualizador do contrato */
+.pf-contract-dot { width:7px; height:7px; border-radius:50%; background:#2fb344; box-shadow:0 0 0 3px rgba(47,179,68,.18); }
+.pf-contract-viewer .modal-dialog { max-width:min(1200px, 96vw); }
+.pf-contract-viewer .modal-content { height:min(92vh, 1000px); }
+.pf-cv-head { display:flex; align-items:center; gap:12px; min-width:0; }
+.pf-cv-head .modal-title { margin:2px 0 0; font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pf-cv-icon { display:grid; place-items:center; width:40px; height:40px; flex:0 0 40px; border-radius:11px; font-size:20px; color:var(--pf-primary, #f5b82e); background:color-mix(in srgb, var(--pf-primary, #f5b82e) 14%, transparent); }
+.pf-cv-tabs { display:flex; gap:4px; padding:6px 12px; overflow-x:auto; border-bottom:1px solid var(--pf-border, #e5e7eb); background:var(--pf-surface-soft, #f7f8fb); }
+.pf-cv-tabs button { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 12px; border:0; border-radius:8px; background:transparent; color:var(--pf-muted, #6b7280); font-size:12.5px; font-weight:600; white-space:nowrap; cursor:pointer; }
+.pf-cv-tabs button.is-active { color:var(--pf-text, #1f2937); background:color-mix(in srgb, var(--pf-primary, #f5b82e) 20%, transparent); }
+.pf-cv-stage { position:relative; display:flex; height:100%; min-height:420px; background:#525659; }
+.pf-cv-frame { flex:1 1 auto; width:100%; height:100%; min-height:420px; border:0; background:#fff; }
+.pf-cv-image { display:flex; align-items:center; justify-content:center; flex:1 1 auto; padding:16px; overflow:auto; }
+.pf-cv-image img, .pf-cv-image video { max-width:100%; max-height:100%; object-fit:contain; box-shadow:0 6px 24px rgba(0,0,0,.35); background:#fff; }
+.pf-cv-text { flex:1 1 auto; margin:0; padding:20px 24px; overflow:auto; white-space:pre-wrap; word-break:break-word; font-size:12.5px; color:#1f2937; background:#fff; }
+.pf-cv-msg { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; flex:1 1 auto; padding:40px 20px; text-align:center; color:var(--pf-muted, #6b7280); background:var(--pf-surface, #fff); }
+.pf-cv-msg i { font-size:34px; color:var(--pf-primary, #f5b82e); }
+.pf-cv-msg strong { color:var(--pf-text, #1f2937); font-size:15px; }
+.pf-cv-msg span { max-width:520px; font-size:13px; word-break:break-word; }
+.pf-cv-footer { display:flex; align-items:center; gap:.5rem; }
+.pf-cv-footer .pf-footer-spacer { flex:1 1 auto; }

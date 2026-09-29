@@ -1,3 +1,26 @@
-Project Flow is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+Pellissari Project (plugin GLPI "projectflow")
+Copyright (c) 2026 Pellissari - Fluidez Digital. Todos os direitos reservados.
+Autor: Kawan Costa
 
-Project Flow is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See https://www.gnu.org/licenses/gpl-3.0.html for the full license text.
+LICENÇA DE USO PROPRIETÁRIA
+
+1. Este software, incluindo código-fonte, documentação e demais arquivos que o acompanham,
+   é de propriedade exclusiva da Pellissari.
+
+2. O uso é permitido somente:
+   a) internamente, pela Pellissari e por seus colaboradores; e
+   b) por clientes aos quais a Pellissari conceder expressamente o direito de uso, nos termos
+      e pelo prazo dessa concessão.
+
+3. Sem autorização prévia e por escrito da Pellissari, é proibido: copiar, redistribuir,
+   sublicenciar, vender, publicar, disponibilizar a terceiros ou utilizar este software fora das
+   hipóteses do item 2. Modificações só podem ser feitas pela Pellissari ou com sua autorização.
+
+4. A cessão de uso a um cliente não transfere a propriedade do software e pode ser revogada
+   conforme o contrato firmado com a Pellissari.
+
+5. O software é fornecido "no estado em que se encontra", sem garantias além das previstas em
+   contrato com a Pellissari.
+
+Bibliotecas de terceiros incluídas em public/lib mantêm suas próprias licenças
+(ver public/lib/THIRD-PARTY-LICENSES.txt).

@@ -209,4 +209,4 @@ Veja:
 
 ## Licença
 
-GPL-3.0-or-later.
+Software proprietário da Pellissari. Uso permitido somente internamente na Pellissari e em clientes aos quais a Pellissari ceder o uso. Veja o arquivo `LICENSE`.

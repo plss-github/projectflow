@@ -11,12 +11,12 @@
     </div>
   </section>
 
-  <section class="pf-assistance-queue-stats">
-    <button class="is-selected" type="button" data-pf-task-quick="all"><span>{{ stats.total }}</span><small>Exibidas</small></button>
-    <button type="button" data-pf-task-quick="overdue"><span>{{ stats.overdue }}</span><small>Em atraso</small></button>
-    <button type="button" data-pf-task-quick="attention"><span>{{ stats.attention }}</span><small>Atenção</small></button>
-    <button type="button" data-pf-task-quick="today"><span>{{ stats.today }}</span><small>Vencem hoje</small></button>
-    <button type="button" data-pf-task-quick="next7"><span>{{ stats.next7 }}</span><small>Próx. 7 dias</small></button>
+  <section class="pf-queue-kpis">
+    <button class="pf-qk pf-qk-all is-selected" type="button" data-pf-task-quick="all" title="Tarefas na lista atual"><span class="pf-qk-icon"><i class="ti ti-list-check"></i></span><span class="pf-qk-text"><small>Exibidas</small><strong>{{ stats.total }}</strong></span></button>
+    <button class="pf-qk pf-qk-overdue" type="button" data-pf-task-quick="overdue" title="Prazo já passou"><span class="pf-qk-icon"><i class="ti ti-calendar-exclamation"></i></span><span class="pf-qk-text"><small>Em atraso</small><strong>{{ stats.overdue }}</strong></span></button>
+    <button class="pf-qk pf-qk-attention" type="button" data-pf-task-quick="attention" title="Marcadas como ponto de atenção"><span class="pf-qk-icon"><i class="ti ti-alert-triangle"></i></span><span class="pf-qk-text"><small>Atenção</small><strong>{{ stats.attention }}</strong></span></button>
+    <button class="pf-qk pf-qk-today" type="button" data-pf-task-quick="today" title="Prazo até o fim do dia"><span class="pf-qk-icon"><i class="ti ti-calendar-event"></i></span><span class="pf-qk-text"><small>Vencem hoje</small><strong>{{ stats.today }}</strong></span></button>
+    <button class="pf-qk pf-qk-next7" type="button" data-pf-task-quick="next7" title="Prazo nos próximos 7 dias"><span class="pf-qk-icon"><i class="ti ti-calendar-week"></i></span><span class="pf-qk-text"><small>Próx. 7 dias</small><strong>{{ stats.next7 }}</strong></span></button>
   </section>
 
   <section class="pf-panel pf-task-filterbar pf-assistance-filterbar">
@@ -24,7 +24,7 @@
     <select id="pf-task-center-project" class="form-select"><option value="">Todos os projetos</option>{% for project in projects %}<option value="{{ project.id }}">{{ project.name }}{% if project.code %} · {{ project.code }}{% endif %}</option>{% endfor %}</select>
     <select id="pf-task-center-state" class="form-select"><option value="">Todos os estados</option>{% for state in states %}<option value="{{ state.id }}">{{ state.name }}</option>{% endfor %}</select>
     <select id="pf-task-center-priority" class="form-select"><option value="">Todas as prioridades</option>{% for p in priorities %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select>
-    <a class="btn btn-outline-secondary pf-icon-btn" title="{{ include_finished ? 'Ocultar concluídas' : 'Incluir concluídas' }}" href="{{ tasks_url }}?scope={{ scope }}{{ include_finished ? '' : '&finished=1' }}"><i class="ti ti-{{ include_finished ? 'eye-off' : 'history' }}"></i></a>
+    <a class="btn {{ include_finished ? 'btn-primary' : 'btn-outline-secondary' }} text-nowrap" title="{{ include_finished ? 'Ocultar tarefas concluídas' : 'Mostrar também as tarefas concluídas' }}" href="{{ tasks_url }}?scope={{ scope }}{{ include_finished ? '' : '&finished=1' }}"><i class="ti ti-{{ include_finished ? 'eye-off' : 'circle-check' }}"></i> {{ include_finished ? 'Ocultar concluídas' : 'Mostrar concluídas' }}</a>
   </section>
 
   <section class="pf-panel pf-assistance-table-panel">

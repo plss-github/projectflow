@@ -99,7 +99,53 @@ class TaskService
         $data['project_url'] = PLUGIN_PROJECTFLOW_WEBDIR . '/front/project.php?id=' . (int) $task->fields['projects_id'];
         $data['task_url'] = PLUGIN_PROJECTFLOW_WEBDIR . '/front/task.php?id=' . $taskId;
         $data['can_create_ticket'] = Session::haveRight(Ticket::$rightname, CREATE);
+        $data['can_manage_states'] = $this->canManageAllowedStates($taskId);
         return $data;
+    }
+
+    /**
+     * Who may define the states a task is allowed to use: whoever can update the project, except
+     * the task's executor (a user in the task team, directly or through a group). The project
+     * manager is the only exception, even when executing the task.
+     */
+    public function canManageAllowedStates(int $taskId): bool
+    {
+        $task = new ProjectTask();
+        if (!$task->getFromDB($taskId)) return false;
+        $projectId = (int) $task->fields['projects_id'];
+        if (!$this->canManageStatesInProject($projectId)) return false;
+        if ($this->isProjectManager($projectId)) return true;
+        return !$this->isTaskExecutor($taskId);
+    }
+
+    /** Same rule when creating a task: the future executor cannot restrict its own task. */
+    public function canManageAllowedStatesOnCreate(int $projectId, int $assigneeId): bool
+    {
+        if (!$this->canManageStatesInProject($projectId)) return false;
+        if ($this->isProjectManager($projectId)) return true;
+        return $assigneeId !== (int) Session::getLoginUserID();
+    }
+
+    private function canManageStatesInProject(int $projectId): bool
+    {
+        $project = new Project();
+        return $projectId > 0 && $project->getFromDB($projectId) && $project->can($projectId, UPDATE);
+    }
+
+    private function isProjectManager(int $projectId): bool
+    {
+        $project = new Project();
+        $uid = (int) Session::getLoginUserID();
+        return $uid > 0 && $project->getFromDB($projectId) && (int) ($project->fields['users_id'] ?? 0) === $uid;
+    }
+
+    private function isTaskExecutor(int $taskId): bool
+    {
+        $uid = (int) Session::getLoginUserID();
+        if ($uid <= 0) return false;
+        if (countElementsInTable(ProjectTaskTeam::getTable(), ['projecttasks_id' => $taskId, 'itemtype' => User::class, 'items_id' => $uid]) > 0) return true;
+        $groups = array_values(array_filter(array_map('intval', (array) ($_SESSION['glpigroups'] ?? []))));
+        return $groups && countElementsInTable(ProjectTaskTeam::getTable(), ['projecttasks_id' => $taskId, 'itemtype' => Group::class, 'items_id' => $groups]) > 0;
     }
 
     public function create(int $projectId, array $input): int|false
@@ -113,9 +159,16 @@ class TaskService
         // Tasks stored in a template are only a blueprint: tickets are opened for real projects.
         $ticketMode = (($projectMeta['execution_mode'] ?? 'direct') === 'ticket') && empty($project->fields['is_template']);
         if ($ticketMode && !Session::haveRight(Ticket::$rightname, CREATE)) return false;
-        $stateId = (int) ($input['projectstates_id'] ?? Config::int('default_task_state_id', 0));
-        if ($stateId <= 0) $stateId = $this->firstOpenStateId();
+        // States this task may use (per task); empty = every state. The executor never defines them.
+        $allowed = MetaService::parseStateIds($input['allowed_states'] ?? '');
+        if ($allowed && !$this->canManageAllowedStatesOnCreate($projectId, (int) ($input['assignee_user_id'] ?? Session::getLoginUserID()))) return false;
+        $explicitState = (int) ($input['projectstates_id'] ?? 0);
+        $stateId = $explicitState > 0 ? $explicitState : $this->defaultTaskStateId($allowed);
         if (!$this->validState($stateId)) return false;
+        if ($allowed && !in_array($stateId, $allowed, true)) {
+            if ($explicitState > 0) return false;
+            $stateId = $this->defaultTaskStateId($allowed);
+        }
         $start = $this->date($input['plan_start_date'] ?? null);
         $end = $this->date($input['plan_end_date'] ?? null);
         if (!$this->validRange($start, $end)) return false;
@@ -125,10 +178,8 @@ class TaskService
         if ($milestone && $start) $end = $start;
         if (!$this->validRequester($input)) return false;
 
-        $percent = max(0, min(100, (int) ($input['percent_done'] ?? 0)));
-        if (Config::bool('auto_progress_on_kanban', true) && $stateId > 0) {
-            $percent = $this->progressForState($stateId, $percent);
-        }
+        // Progress is never typed: it always follows the state (percent per state).
+        $percent = $this->progressForState($stateId, 0);
 
         $payload = [
             'projects_id' => $projectId,
@@ -137,7 +188,7 @@ class TaskService
             'projectstates_id' => $stateId,
             'projecttasktypes_id' => max(0, (int) ($input['projecttasktypes_id'] ?? 0)),
             'percent_done' => $percent,
-            'auto_percent_done' => !empty($input['auto_percent_done']) ? 1 : 0,
+            'auto_percent_done' => 0,
             'auto_projectstates' => 0,
             'is_milestone' => $milestone ? 1 : 0,
             'plan_start_date' => $start,
@@ -152,6 +203,7 @@ class TaskService
         if (!array_key_exists('requester_users_id', $taskMetaInput) || (int) $taskMetaInput['requester_users_id'] <= 0) {
             $taskMetaInput['requester_users_id'] = (int) Session::getLoginUserID();
         }
+        $taskMetaInput['_current_state_id'] = $stateId;
         $this->meta->saveTaskMeta((int) $id, $taskMetaInput);
 
         $assignee = (int) ($input['assignee_user_id'] ?? Session::getLoginUserID());
@@ -178,6 +230,14 @@ class TaskService
         $task = new ProjectTask();
         if (!$task->getFromDB($taskId) || !$task->canUpdateItem()) return false;
 
+        // Allowed states are defined by the project side, never by the executor of the task.
+        if (array_key_exists('allowed_states', $input)
+            && MetaService::normalizeStateIdsForCompare($input['allowed_states']) !== MetaService::normalizeStateIdsForCompare($this->meta->getAllowedStateIds($taskId))
+            && !$this->canManageAllowedStates($taskId)) {
+            return false;
+        }
+        if (array_key_exists('allowed_states', $input) && !$this->canManageAllowedStates($taskId)) unset($input['allowed_states']);
+
         $payload = ['id' => $taskId];
         if (array_key_exists('name', $input)) {
             $name = mb_substr(trim(strip_tags((string) $input['name'])), 0, 255);
@@ -188,15 +248,14 @@ class TaskService
         if (array_key_exists('projectstates_id', $input)) {
             $stateId = (int) $input['projectstates_id'];
             if (!$this->validState($stateId)) return false;
+            $allowed = array_key_exists('allowed_states', $input) ? MetaService::parseStateIds($input['allowed_states']) : $this->meta->getAllowedStateIds($taskId);
+            if ($stateId !== (int) ($task->fields['projectstates_id'] ?? 0) && $allowed && !in_array($stateId, $allowed, true)) return false;
             $payload['projectstates_id'] = $stateId;
             $payload['auto_projectstates'] = 0;
-            if (Config::bool('auto_progress_on_kanban', true) && !array_key_exists('percent_done', $input)) {
-                $payload['percent_done'] = $this->progressForState($stateId, (int) ($task->fields['percent_done'] ?? 0));
-            }
+            $payload['percent_done'] = $this->progressForState($stateId, (int) ($task->fields['percent_done'] ?? 0));
         }
         if (array_key_exists('projecttasktypes_id', $input)) $payload['projecttasktypes_id'] = max(0, (int) $input['projecttasktypes_id']);
-        if (array_key_exists('percent_done', $input)) $payload['percent_done'] = max(0, min(100, (int) $input['percent_done']));
-        if (array_key_exists('auto_percent_done', $input)) $payload['auto_percent_done'] = !empty($input['auto_percent_done']) ? 1 : 0;
+        // percent_done / auto_percent_done from the request are ignored: progress follows the state.
         if (array_key_exists('is_milestone', $input)) $payload['is_milestone'] = !empty($input['is_milestone']) ? 1 : 0;
         if (array_key_exists('projecttasks_id', $input)) {
             $parent = (int) $input['projecttasks_id'];
@@ -218,7 +277,9 @@ class TaskService
         if (!$this->validRange($start, $end)) return false;
 
         $ok = (bool) $task->update($payload);
-        if ($ok && array_intersect(['requester_users_id','priority','attention','attention_note','reminder_at','reminder_email','reminder_browser'], array_keys($input))) {
+        if ($ok && array_intersect(['requester_users_id','priority','attention','attention_note','reminder_at','reminder_email','reminder_browser','allowed_states'], array_keys($input))) {
+            // The state the task is in stays allowed, so the restriction never strands a task.
+            $input['_current_state_id'] = (int) ($payload['projectstates_id'] ?? $task->fields['projectstates_id'] ?? 0);
             $this->meta->saveTaskMeta($taskId, $input);
         }
         return $ok;
@@ -228,10 +289,9 @@ class TaskService
     {
         $task = new ProjectTask();
         if (!$task->getFromDB($taskId) || !$task->canUpdateItem() || !$this->validState($stateId)) return false;
+        if ($stateId !== (int) ($task->fields['projectstates_id'] ?? 0) && !$this->stateAllowedForTask($taskId, $stateId)) return false;
         $payload = ['id' => $taskId, 'projectstates_id' => $stateId, 'auto_projectstates' => 0];
-        if (Config::bool('auto_progress_on_kanban', true)) {
-            $payload['percent_done'] = $this->progressForState($stateId, (int) ($task->fields['percent_done'] ?? 0));
-        }
+        $payload['percent_done'] = $this->progressForState($stateId, (int) ($task->fields['percent_done'] ?? 0));
         return (bool) $task->update($payload);
     }
 
@@ -249,7 +309,8 @@ class TaskService
         foreach (array_values(array_unique(array_map('intval', $taskIds))) as $id) {
             if (!$this->isTaskInProject($id, $projectId)) continue;
             if ($operation === 'complete') {
-                $ok = $finishedStateId > 0 ? $this->move($id, $finishedStateId) : $this->update($id, ['percent_done' => 100]);
+                $target = $this->finishedStateForTask($id, $finishedStateId);
+                $ok = $target > 0 && $this->move($id, $target);
                 if ($ok) $count++;
             } elseif ($operation === 'state' && $this->move($id, $stateId)) {
                 $count++;
@@ -396,14 +457,10 @@ class TaskService
         if (!ProjectTask::canView()) return [];
         $limit = max(1, min($limit, 5000));
 
-        $mine = [];
-        $uid = (int) Session::getLoginUserID();
-        if ($uid > 0) {
-            foreach (ProjectTask::getActiveProjectTaskIDsForUser([$uid]) as $row) {
-                $id = (int) ($row['id'] ?? 0);
-                if ($id > 0) $mine[$id] = true;
-            }
-        }
+        // "Mine" = tasks whose team contains the user or one of the user's groups. GLPI's
+        // getActiveProjectTaskIDsForUser() only returns unfinished tasks, which made finished
+        // tasks impossible to list even with "include finished".
+        $mine = array_fill_keys($this->userTaskIds((int) Session::getLoginUserID()), true);
         if ($mineOnly && $mine === []) return [];
 
         // Resolve project visibility without the portfolio display cap. In "mine" scope only
@@ -489,6 +546,24 @@ class TaskService
         return $tasks;
     }
 
+    /** IDs of tasks assigned to the user directly or through one of the user's groups. */
+    private function userTaskIds(int $userId): array
+    {
+        global $DB;
+        if ($userId <= 0) return [];
+        $groups = [];
+        foreach ($DB->request(['SELECT' => ['groups_id'], 'FROM' => 'glpi_groups_users', 'WHERE' => ['users_id' => $userId]]) as $row) {
+            $groups[] = (int) $row['groups_id'];
+        }
+        $or = [['itemtype' => User::class, 'items_id' => $userId]];
+        if ($groups !== []) $or[] = ['itemtype' => Group::class, 'items_id' => $groups];
+        $ids = [];
+        foreach ($DB->request(['SELECT' => ['projecttasks_id'], 'DISTINCT' => true, 'FROM' => ProjectTaskTeam::getTable(), 'WHERE' => ['OR' => $or]]) as $row) {
+            $ids[] = (int) $row['projecttasks_id'];
+        }
+        return $ids;
+    }
+
     public function getDirectSubtasks(int $taskId): array
     {
         $parent = new ProjectTask();
@@ -498,6 +573,35 @@ class TaskService
             if ((int) ($task['parent_id'] ?? 0) === $taskId) $items[] = $task;
         }
         return $items;
+    }
+
+    /** Initial state for a new task: the configured default when allowed, else the first allowed open state. */
+    public function defaultTaskStateId(array $allowed = []): int
+    {
+        $default = Config::int('default_task_state_id', 0);
+        if ($default <= 0) $default = $this->firstOpenStateId();
+        if (!$allowed || in_array($default, $allowed, true)) return $default;
+        foreach ($this->references->getProjectStates() as $state) {
+            if (empty($state['is_finished']) && in_array((int) $state['id'], $allowed, true)) return (int) $state['id'];
+        }
+        return (int) $allowed[0];
+    }
+
+    private function stateAllowedForTask(int $taskId, int $stateId): bool
+    {
+        $allowed = $this->meta->getAllowedStateIds($taskId);
+        return !$allowed || in_array($stateId, $allowed, true);
+    }
+
+    /** First finished state the task may use (bulk "complete"). */
+    private function finishedStateForTask(int $taskId, int $fallback): int
+    {
+        $allowed = $this->meta->getAllowedStateIds($taskId);
+        if (!$allowed) return $fallback;
+        foreach ($this->references->getProjectStates() as $state) {
+            if (!empty($state['is_finished']) && in_array((int) $state['id'], $allowed, true)) return (int) $state['id'];
+        }
+        return 0;
     }
 
     public function getBoard(array $tasks, bool $showFinished = true): array
@@ -747,6 +851,7 @@ class TaskService
             'requester_name' => $requesterId > 0 ? self::userName($requesterId) : 'Não definido',
             'attention' => !empty($meta['attention']),
             'attention_note' => (string) ($meta['attention_note'] ?? ''),
+            'allowed_state_ids' => MetaService::parseStateIds((string) ($meta['allowed_states'] ?? '')),
             'reminder_at' => $meta['reminder_at'] ?? null,
             'reminder_email' => !empty($meta['reminder_email']),
             'reminder_browser' => !empty($meta['reminder_browser']),

@@ -60,6 +60,18 @@ class DocumentService
             ];
         }
 
+        if ($itemtype === Project::class) {
+            $listed = [];
+            foreach ($documents as $doc) $listed[$doc['id']] = true;
+            $documents = array_merge($documents, $this->taskOnlyDocuments($itemId, $listed));
+            $origins = $this->taskOriginsForProject($itemId, array_map(static fn(array $d): int => (int) $d['id'], $documents));
+            foreach ($documents as &$doc) {
+                $doc['origins'] = $origins[(int) $doc['id']] ?? [];
+                $doc['from_task_only'] = !empty($doc['from_task_only']);
+            }
+            unset($doc);
+        }
+
         return $documents;
     }
 
@@ -161,6 +173,89 @@ class DocumentService
 
         // Only remove this association. The shared Document itself is kept intact.
         return (bool) $relation->delete(['id' => $relationId]);
+    }
+
+    /** Link $documentId to the project of $taskId when it is not linked yet. */
+    public function mirrorTaskDocumentOnProject(int $documentId, int $taskId): void
+    {
+        if ($documentId <= 0 || $taskId <= 0) return;
+        $task = new ProjectTask();
+        if (!$task->getFromDB($taskId)) return;
+        $projectId = (int) ($task->fields['projects_id'] ?? 0);
+        if ($projectId <= 0) return;
+        $where = ['documents_id' => $documentId, 'itemtype' => Project::class, 'items_id' => $projectId];
+        if (countElementsInTable(Document_Item::getTable(), $where) > 0) return;
+        (new Document_Item())->add($where);
+    }
+
+    /**
+     * Tasks of $projectId that also hold each document: [documentId => [[id, name, url], ...]].
+     */
+    private function taskOriginsForProject(int $projectId, array $documentIds): array
+    {
+        global $DB;
+        if ($documentIds === []) return [];
+        $tasks = [];
+        foreach ($DB->request(['SELECT' => ['id', 'name'], 'FROM' => ProjectTask::getTable(), 'WHERE' => ['projects_id' => $projectId, 'is_deleted' => 0]]) as $row) {
+            $tasks[(int) $row['id']] = (string) $row['name'];
+        }
+        if ($tasks === []) return [];
+        $out = [];
+        foreach ($DB->request([
+            'SELECT' => ['documents_id', 'items_id'],
+            'FROM' => Document_Item::getTable(),
+            'WHERE' => ['itemtype' => ProjectTask::class, 'items_id' => array_keys($tasks), 'documents_id' => array_values($documentIds)],
+            'ORDERBY' => ['id ASC'],
+        ]) as $row) {
+            $taskId = (int) $row['items_id'];
+            $out[(int) $row['documents_id']][] = [
+                'id' => $taskId,
+                'name' => $tasks[$taskId] ?? ('Tarefa #' . $taskId),
+                'url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/task.php?id=' . $taskId,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Documents that are linked only to tasks of the project (attached before 3.4.3), so the
+     * project list shows them too. Returns relation-less rows marked `from_task_only`.
+     */
+    private function taskOnlyDocuments(int $projectId, array $alreadyListed): array
+    {
+        global $DB, $CFG_GLPI;
+        $taskIds = [];
+        foreach ($DB->request(['SELECT' => ['id'], 'FROM' => ProjectTask::getTable(), 'WHERE' => ['projects_id' => $projectId, 'is_deleted' => 0]]) as $row) $taskIds[] = (int) $row['id'];
+        if ($taskIds === []) return [];
+        $out = [];
+        foreach ($DB->request([
+            'SELECT' => ['documents_id', 'items_id'],
+            'FROM' => Document_Item::getTable(),
+            'WHERE' => ['itemtype' => ProjectTask::class, 'items_id' => $taskIds],
+            'ORDERBY' => ['id DESC'],
+        ]) as $row) {
+            $documentId = (int) $row['documents_id'];
+            if (isset($alreadyListed[$documentId]) || isset($out[$documentId])) continue;
+            $document = new Document();
+            if (!$document->getFromDB($documentId) || !empty($document->fields['is_deleted'])) continue;
+            $taskId = (int) $row['items_id'];
+            if (!Document::canView() && !$document->canViewFile(['itemtype' => ProjectTask::class, 'items_id' => $taskId])) continue;
+            $filename = trim((string) ($document->fields['filename'] ?? ''));
+            $name = trim((string) ($document->fields['name'] ?? ''));
+            $out[$documentId] = [
+                'relation_id' => 0,
+                'id' => $documentId,
+                'name' => $name !== '' ? $name : ($filename !== '' ? $filename : 'Documento #' . $documentId),
+                'filename' => $filename,
+                'mime' => (string) ($document->fields['mime'] ?? ''),
+                'link' => trim((string) ($document->fields['link'] ?? '')),
+                'date_mod' => $document->fields['date_mod'] ?? null,
+                'url' => Document::getFormURLWithID($documentId),
+                'download_url' => rtrim((string) ($CFG_GLPI['root_doc'] ?? ''), '/') . '/front/document.send.php?docid=' . $documentId . '&itemtype=' . rawurlencode(ProjectTask::class) . '&items_id=' . $taskId,
+                'from_task_only' => true,
+            ];
+        }
+        return array_values($out);
     }
 
     private function loadItem(string $itemtype, int $itemId): ?CommonDBTM

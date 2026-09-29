@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Config::set('dashboard_limit', (string) max(25, min(1000, (int) ($_POST['dashboard_limit'] ?? 250))));
     Config::set('show_finished_states', !empty($_POST['show_finished_states']) ? '1' : '0');
     Config::set('compact_cards', !empty($_POST['compact_cards']) ? '1' : '0');
-    Config::set('auto_progress_on_kanban', !empty($_POST['auto_progress_on_kanban']) ? '1' : '0');
+    Config::set('auto_progress_on_kanban', '1'); // progress always follows the state
     Config::set('auto_add_task_member_to_project_team', !empty($_POST['auto_add_task_member_to_project_team']) ? '1' : '0');
     Config::set(
         'default_dashboard_view',
@@ -37,8 +37,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if(in_array($defaultProjectState,$stateIds,true)) Config::set('default_project_state_id',(string)$defaultProjectState);
     if(in_array($defaultTaskState,$stateIds,true)) Config::set('default_task_state_id',(string)$defaultTaskState);
     Config::set('default_execution_mode', in_array(($_POST['default_execution_mode']??'direct'),['direct','ticket'],true)?(string)$_POST['default_execution_mode']:'direct');
-    Config::set('default_cost_mode', in_array(($_POST['default_cost_mode']??'hours'),['hours','money'],true)?(string)$_POST['default_cost_mode']:'hours');
+    Config::set('default_cost_mode', in_array(($_POST['default_cost_mode']??'hours'),['hours','money','both'],true)?(string)$_POST['default_cost_mode']:'hours');
     Config::set('reminder_email_enabled', !empty($_POST['reminder_email_enabled'])?'1':'0');
+    Config::set('ai_enabled', !empty($_POST['ai_enabled']) ? '1' : '0');
+    $aiModel = trim((string) ($_POST['ai_gemini_model'] ?? ''));
+    Config::set('ai_gemini_model', preg_match('/^[A-Za-z0-9._-]{3,80}$/', $aiModel) ? $aiModel : \GlpiPlugin\Projectflow\Service\AiReportService::DEFAULT_MODEL);
+    $aiFallback = trim((string) ($_POST['ai_gemini_fallback_model'] ?? ''));
+    Config::set('ai_gemini_fallback_model', $aiFallback === '' || preg_match('/^[A-Za-z0-9._-]{3,80}$/', $aiFallback) ? $aiFallback : '');
+    Config::set('ai_instructions', mb_substr(trim(strip_tags((string) ($_POST['ai_instructions'] ?? ''))), 0, 4000));
+    if (!empty($_POST['ai_gemini_key_clear'])) {
+        \GlpiPlugin\Projectflow\Service\AiReportService::saveApiKey('');
+    } elseif (trim((string) ($_POST['ai_gemini_key'] ?? '')) !== '') {
+        // An empty field keeps the stored key: it is never sent back to the browser.
+        \GlpiPlugin\Projectflow\Service\AiReportService::saveApiKey((string) $_POST['ai_gemini_key']);
+    }
     Config::set('replace_native_projects_menu', !empty($_POST['replace_native_projects_menu'])?'1':'0');
     unset($_SESSION['glpimenu']); // rebuild the GLPI menu with the new setting
 
@@ -77,6 +89,11 @@ plugin_projectflow_display('config.html.twig', [
     'default_execution_mode'=>(string)Config::get('default_execution_mode','direct'),
     'default_cost_mode'=>(string)Config::get('default_cost_mode','hours'),
     'reminder_email_enabled'=>Config::bool('reminder_email_enabled',true),
+    'ai_enabled' => Config::bool('ai_enabled', false),
+    'ai_has_key' => \GlpiPlugin\Projectflow\Service\AiReportService::getApiKey() !== '',
+    'ai_gemini_model' => \GlpiPlugin\Projectflow\Service\AiReportService::getModel(),
+    'ai_instructions' => (string) Config::get('ai_instructions', ''),
+    'ai_gemini_fallback_model' => \GlpiPlugin\Projectflow\Service\AiReportService::getFallbackModel(),
     'replace_native_projects_menu'=>Config::bool('replace_native_projects_menu',true),
     'states' => $states,
     'catalog_states' => array_map(static fn(array $s): array => $s + ['progress' => $s['is_finished'] ? 100 : ($stateProgress[$s['id']] ?? 0)], $catalog->list('state')),

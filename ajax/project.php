@@ -45,6 +45,11 @@ try {
             if (!$id) projectflow_json_response(false, ['message' => 'Não foi possível criar o projeto. Verifique permissões e campos obrigatórios.'], 400);
             projectflow_json_response(true, ['id' => $id, 'url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/project.php?id=' . $id, 'message' => 'Projeto criado com sucesso.']);
 
+        case 'template_info':
+            $data = $service->getTemplateDefaults((int)($input['template_id'] ?? 0));
+            if ($data === null) projectflow_json_response(false, ['message' => 'Template não encontrado ou sem acesso.'], 404);
+            projectflow_json_response(true, ['template' => $data]);
+
         case 'template_create':
             $id = $service->createTemplate($input);
             if (!$id) projectflow_json_response(false, ['message' => 'Não foi possível criar o template. Verifique o nome, a entidade e suas permissões.'], 400);
@@ -98,6 +103,15 @@ try {
         case 'report_generate':
             $projectId=(int)($input['project_id']??0);$report=(new WeeklyReportService())->generate($projectId,$input['week_start']??null);if($report===null)projectflow_json_response(false,['message'=>'Não foi possível gerar o relatório.'],400);
             projectflow_json_response(true,['report'=>$report]);
+
+        case 'report_ai':
+            $projectId=(int)($input['project_id']??0);
+            try {
+                $report=(new \GlpiPlugin\Projectflow\Service\AiReportService())->generate($projectId,(string)($input['scope']??'week'),$input['week_start']??null);
+            } catch (\RuntimeException $e) {
+                projectflow_json_response(false,['message'=>$e->getMessage()],400);
+            }
+            projectflow_json_response(true,['report'=>$report,'message'=>'Relatório gerado pelo Gemini ('.$report['model'].').']);
 
         case 'report_save':
             $projectId=(int)($input['project_id']??0);$id=(new WeeklyReportService())->save($projectId,(string)($input['week_start']??''),(string)($input['content']??''));if(!$id)projectflow_json_response(false,['message'=>'Não foi possível salvar o relatório.'],400);
