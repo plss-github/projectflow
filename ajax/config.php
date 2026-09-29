@@ -50,6 +50,17 @@ try {
             if (!$rules->delete((int) ($_POST['id'] ?? 0))) projectflow_config_response(false, ['message' => 'Não foi possível excluir a regra.'], 400);
             projectflow_config_response(true, ['message' => 'Regra excluída.']);
 
+        case 'ai_test':
+            try {
+                $result = (new \GlpiPlugin\Projectflow\Service\AiReportService())->testConnection((string) ($_POST['key'] ?? ''), trim((string) ($_POST['model'] ?? '')) ?: null);
+            } catch (\RuntimeException $e) {
+                projectflow_config_response(false, ['message' => $e->getMessage()], 400);
+            }
+            $msg = $result['model_ok']
+                ? 'Conexão OK. O modelo ' . $result['model'] . ' está disponível.'
+                : 'Chave válida, mas o modelo ' . $result['model'] . ' não está disponível para ela. Escolha um da lista.';
+            projectflow_config_response(true, $result + ['message' => $msg]);
+
         default:
             projectflow_config_response(false, ['message' => 'Ação inválida.'], 400);
     }

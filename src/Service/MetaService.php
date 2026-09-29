@@ -11,6 +11,32 @@ class MetaService
     private const FAVORITES = 'glpi_plugin_projectflow_favorites';
     private const STATE_PROGRESS = 'glpi_plugin_projectflow_stateprogress';
 
+    /** hours = horas; money = custo financeiro; both = horas valorizadas (valor/hora) + custos avulsos. */
+    public const COST_MODES = ['hours', 'money', 'both'];
+
+    public static function costModeHasHours(string $mode): bool { return $mode === 'hours' || $mode === 'both'; }
+    public static function costModeHasMoney(string $mode): bool { return $mode === 'money' || $mode === 'both'; }
+
+    /** Accepts "150", "150.5", "150,50" and "1.234,56". */
+    public static function parseMoney(mixed $value): float
+    {
+        $v = trim(str_replace(['R$', ' '], '', (string) $value));
+        if ($v === '') return 0.0;
+        if (str_contains($v, ',')) $v = str_replace(['.', ','], ['', '.'], $v);
+        return max(0.0, min(99999999.99, round((float) $v, 2)));
+    }
+
+    private function ensureHourRateColumn(): void
+    {
+        static $checked = false;
+        if ($checked) return;
+        $checked = true;
+        global $DB;
+        if ($DB->tableExists(self::PROJECT_META) && !$DB->fieldExists(self::PROJECT_META, 'hour_rate')) {
+            $DB->doQuery('ALTER TABLE `' . self::PROJECT_META . '` ADD `hour_rate` DECIMAL(12,2) NOT NULL DEFAULT 0');
+        }
+    }
+
     /** Hourly cron attempts before an undeliverable e-mail reminder is abandoned (~24h). */
     public const REMINDER_MAX_ATTEMPTS = 24;
 
@@ -19,17 +45,62 @@ class MetaService
         global $DB;
         $defaults = [
             'health' => 'auto', 'risk_level' => 'normal', 'portfolio' => '', 'sponsor' => '', 'objective' => '',
-            'execution_mode' => 'direct', 'cost_mode' => 'hours', 'hours_budget_minutes' => 0,
+            'execution_mode' => 'direct', 'cost_mode' => 'hours', 'hours_budget_minutes' => 0, 'hour_rate' => 0,
         ];
         if (!$DB->tableExists(self::PROJECT_META)) return $defaults;
+        $this->ensureHourRateColumn();
         $it = $DB->request(['FROM' => self::PROJECT_META, 'WHERE' => ['projects_id' => $projectId], 'LIMIT' => 1]);
         return $it->count() ? array_merge($defaults, $it->current()) : $defaults;
+    }
+
+    /** Parses a stored list of state ids ("1,4,7" or an array). Empty = every state. */
+    public static function parseStateIds(mixed $value): array
+    {
+        if (is_string($value)) $value = $value === '' ? [] : explode(',', $value);
+        if (!is_array($value)) return [];
+        $ids = [];
+        foreach ($value as $id) { $id = (int) $id; if ($id > 0 && !in_array($id, $ids, true)) $ids[] = $id; }
+        return $ids;
+    }
+
+    /** Sorted id list for comparisons ('' and the full set both mean "every state"). */
+    public static function normalizeStateIdsForCompare(mixed $value): array
+    {
+        $ids = self::parseStateIds($value);
+        $all = array_map(static fn(array $s): int => (int) $s['id'], (new ReferenceService())->getProjectStates());
+        $ids = array_values(array_intersect($ids, $all));
+        if (count($ids) === count($all)) $ids = [];
+        sort($ids);
+        return $ids;
+    }
+
+    /** Keeps only existing states, in catalog order; the full set is stored as '' (= all states). */
+    public function normalizeStateList(mixed $value, int $mustInclude = 0): string
+    {
+        $wanted = self::parseStateIds($value);
+        if (!$wanted) return '';
+        if ($mustInclude > 0 && !in_array($mustInclude, $wanted, true)) $wanted[] = $mustInclude;
+        $all = array_map(static fn(array $s): int => (int) $s['id'], (new ReferenceService())->getProjectStates());
+        $ids = array_values(array_filter($all, static fn(int $id): bool => in_array($id, $wanted, true)));
+        return (!$ids || count($ids) === count($all)) ? '' : implode(',', $ids);
+    }
+
+    private function ensureAllowedStatesColumn(): void
+    {
+        static $checked = false;
+        if ($checked) return;
+        $checked = true;
+        global $DB;
+        if ($DB->tableExists(self::TASK_META) && !$DB->fieldExists(self::TASK_META, 'allowed_states')) {
+            $DB->doQuery('ALTER TABLE `' . self::TASK_META . '` ADD `allowed_states` VARCHAR(1000) NOT NULL DEFAULT \'\'');
+        }
     }
 
     public function getForProjects(array $projectIds): array
     {
         global $DB;
         if (!$projectIds || !$DB->tableExists(self::PROJECT_META)) return [];
+        $this->ensureHourRateColumn();
         $result = [];
         foreach ($DB->request(['FROM' => self::PROJECT_META, 'WHERE' => ['projects_id' => array_values(array_unique(array_map('intval', $projectIds)))]]) as $row) {
             $result[(int) $row['projects_id']] = $row;
@@ -54,10 +125,13 @@ class MetaService
             'sponsor' => mb_substr(trim(strip_tags((string) ($input['sponsor'] ?? $current['sponsor']))), 0, 190),
             'objective' => mb_substr(trim(strip_tags((string) ($input['objective'] ?? $current['objective']))), 0, 4000),
             'execution_mode' => in_array($executionMode, ['direct', 'ticket'], true) ? $executionMode : 'direct',
-            'cost_mode' => in_array($costMode, ['hours', 'money'], true) ? $costMode : 'hours',
+            'cost_mode' => in_array($costMode, self::COST_MODES, true) ? $costMode : 'hours',
             'hours_budget_minutes' => array_key_exists('hours_budget_hours', $input)
                 ? max(0, min(10000000, (int) round(((float) str_replace(',', '.', (string) $input['hours_budget_hours'])) * 60)))
                 : max(0, (int) ($current['hours_budget_minutes'] ?? 0)),
+            'hour_rate' => array_key_exists('hour_rate', $input) && trim((string) $input['hour_rate']) !== ''
+                ? self::parseMoney($input['hour_rate'])
+                : max(0.0, (float) ($current['hour_rate'] ?? 0)),
         ];
         if (countElementsInTable(self::PROJECT_META, ['projects_id' => $projectId])) {
             return $DB->update(self::PROJECT_META, $data, ['projects_id' => $projectId]);
@@ -70,9 +144,10 @@ class MetaService
         global $DB;
         $defaults = [
             'requester_users_id' => 0, 'priority' => 3, 'attention' => 0, 'attention_note' => '', 'reminder_at' => null,
-            'reminder_email' => 1, 'reminder_browser' => 1, 'reminder_sent_at' => null, 'reminder_attempts' => 0,
+            'reminder_email' => 1, 'reminder_browser' => 1, 'reminder_sent_at' => null, 'reminder_attempts' => 0, 'allowed_states' => '',
         ];
         if (!$DB->tableExists(self::TASK_META)) return $defaults;
+        $this->ensureAllowedStatesColumn();
         $it = $DB->request(['FROM' => self::TASK_META, 'WHERE' => ['projecttasks_id' => $taskId], 'LIMIT' => 1]);
         if (!$it->count()) return $defaults;
         $row = array_merge($defaults, $it->current());
@@ -87,6 +162,7 @@ class MetaService
     {
         global $DB;
         if (!$taskIds || !$DB->tableExists(self::TASK_META)) return [];
+        $this->ensureAllowedStatesColumn();
         $result = [];
         foreach ($DB->request(['FROM' => self::TASK_META, 'WHERE' => ['projecttasks_id' => array_values(array_unique(array_map('intval', $taskIds)))]]) as $row) {
             $id = (int) $row['projecttasks_id'];
@@ -98,7 +174,13 @@ class MetaService
 
     public function getTaskMetaDefaults(): array
     {
-        return ['requester_users_id' => 0, 'priority' => 3, 'attention' => 0, 'attention_note' => '', 'reminder_at' => null, 'reminder_email' => 1, 'reminder_browser' => 1, 'reminder_sent_at' => null, 'reminder_attempts' => 0];
+        return ['requester_users_id' => 0, 'priority' => 3, 'attention' => 0, 'attention_note' => '', 'reminder_at' => null, 'reminder_email' => 1, 'reminder_browser' => 1, 'reminder_sent_at' => null, 'reminder_attempts' => 0, 'allowed_states' => ''];
+    }
+
+    /** States a task may use; empty = every state. */
+    public function getAllowedStateIds(int $taskId): array
+    {
+        return self::parseStateIds((string) ($this->getTaskMeta($taskId)['allowed_states'] ?? ''));
     }
 
     public function saveTaskMeta(int $taskId, array $input): bool
@@ -118,6 +200,9 @@ class MetaService
             'reminder_email' => array_key_exists('reminder_email', $input) ? (!empty($input['reminder_email']) ? 1 : 0) : (int) $current['reminder_email'],
             'reminder_browser' => array_key_exists('reminder_browser', $input) ? (!empty($input['reminder_browser']) ? 1 : 0) : (int) $current['reminder_browser'],
             'reminder_sent_at' => $changedReminder ? null : $current['reminder_sent_at'],
+            'allowed_states' => array_key_exists('allowed_states', $input)
+                ? $this->normalizeStateList($input['allowed_states'], (int) ($input['_current_state_id'] ?? 0))
+                : (string) ($current['allowed_states'] ?? ''),
         ];
         if ($changedReminder && $DB->fieldExists(self::TASK_META, 'reminder_attempts')) {
             $data['reminder_attempts'] = 0;
@@ -152,7 +237,7 @@ class MetaService
                 ['reminder_at' => ['<=', $now]],
                 'reminder_email' => 1,
                 'reminder_sent_at' => null,
-            ],
+            ] + (($paused = $this->getPausedTaskIds()) ? [['NOT' => ['projecttasks_id' => $paused]]] : []),
             // Reminders that keep failing (no recipient e-mail, no sender) sink to the end of
             // the queue so they can never starve newer reminders out of the batch.
             'ORDERBY' => $DB->fieldExists(self::TASK_META, 'reminder_attempts') ? ['reminder_attempts ASC', 'reminder_at ASC'] : ['reminder_at ASC'],
@@ -185,6 +270,73 @@ class MetaService
         if ($DB->tableExists(self::TASK_META)) {
             $DB->update(self::TASK_META, ['reminder_sent_at' => date('Y-m-d H:i:s')], ['projecttasks_id' => $taskId]);
         }
+    }
+
+    // ---- Estados que pausam o projeto ------------------------------------------------------
+    private static ?array $pausedStatesCache = null;
+
+    private function ensurePausedColumn(): void
+    {
+        static $checked = false;
+        if ($checked) return;
+        $checked = true;
+        global $DB;
+        if ($DB->tableExists(self::STATE_PROGRESS) && !$DB->fieldExists(self::STATE_PROGRESS, 'is_paused')) {
+            $DB->doQuery('ALTER TABLE `' . self::STATE_PROGRESS . '` ADD `is_paused` TINYINT(1) NOT NULL DEFAULT 0');
+        }
+    }
+
+    /** States flagged as "pausa o projeto": a project in one of them sends no notifications. */
+    public function getPausedStateIds(): array
+    {
+        if (self::$pausedStatesCache !== null) return self::$pausedStatesCache;
+        global $DB;
+        if (!$DB->tableExists(self::STATE_PROGRESS)) return self::$pausedStatesCache = [];
+        $this->ensurePausedColumn();
+        $ids = [];
+        foreach ($DB->request(['SELECT' => ['projectstates_id'], 'FROM' => self::STATE_PROGRESS, 'WHERE' => ['is_paused' => 1]]) as $row) $ids[] = (int) $row['projectstates_id'];
+        return self::$pausedStatesCache = $ids;
+    }
+
+    public function isPausedState(int $stateId): bool
+    {
+        return $stateId > 0 && in_array($stateId, $this->getPausedStateIds(), true);
+    }
+
+    public function setStatePaused(int $stateId, bool $paused): bool
+    {
+        global $DB;
+        if ($stateId <= 0 || !$DB->tableExists(self::STATE_PROGRESS)) return false;
+        $this->ensurePausedColumn();
+        self::$pausedStatesCache = null;
+        if (countElementsInTable(self::STATE_PROGRESS, ['projectstates_id' => $stateId])) {
+            return (bool) $DB->update(self::STATE_PROGRESS, ['is_paused' => $paused ? 1 : 0], ['projectstates_id' => $stateId]);
+        }
+        return (bool) $DB->insert(self::STATE_PROGRESS, ['projectstates_id' => $stateId, 'percent_done' => 0, 'is_paused' => $paused ? 1 : 0]);
+    }
+
+    public function isProjectPaused(int $projectId): bool
+    {
+        global $DB;
+        if ($projectId <= 0 || !$this->getPausedStateIds()) return false;
+        $it = $DB->request(['SELECT' => ['projectstates_id'], 'FROM' => 'glpi_projects', 'WHERE' => ['id' => $projectId], 'LIMIT' => 1]);
+        return $it->count() > 0 && $this->isPausedState((int) $it->current()['projectstates_id']);
+    }
+
+    /** Ids of the tasks that belong to paused projects. */
+    public function getPausedTaskIds(): array
+    {
+        global $DB;
+        $states = $this->getPausedStateIds();
+        if (!$states) return [];
+        $ids = [];
+        foreach ($DB->request([
+            'SELECT' => ['glpi_projecttasks.id'],
+            'FROM' => 'glpi_projecttasks',
+            'INNER JOIN' => ['glpi_projects' => ['ON' => ['glpi_projecttasks' => 'projects_id', 'glpi_projects' => 'id']]],
+            'WHERE' => ['glpi_projects.projectstates_id' => $states],
+        ]) as $row) $ids[] = (int) $row['id'];
+        return $ids;
     }
 
     public function getStateProgressMap(): array

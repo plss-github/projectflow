@@ -24,7 +24,10 @@ class WorklogService
             'users_id' => (int) Session::getLoginUserID(), 'work_type' => 'execution', 'work_date' => $workDate,
             'minutes' => $minutes, 'comment' => $comment, 'date_creation' => date('Y-m-d H:i:s'),
         ]);
-        return $ok ? (int) $DB->insertId() : false;
+        if (!$ok) return false;
+        $id = (int) $DB->insertId();
+        $this->syncTaskEffectiveDuration($taskId);
+        return $id;
     }
 
     public function syncMeetingLog(int $projectId, int $meetingId, int $userId, string $date, int $minutes, string $comment, int $taskId = 0): bool
@@ -32,9 +35,18 @@ class WorklogService
         global $DB;
         if (!$DB->tableExists(self::TABLE)) return false;
         $data = ['projects_id' => $projectId, 'projecttasks_id' => max(0, $taskId), 'meetings_id' => $meetingId, 'users_id' => $userId, 'work_type' => 'meeting', 'work_date' => $date, 'minutes' => max(0, $minutes), 'comment' => mb_substr(trim(strip_tags($comment)), 0, 4000)];
-        if (countElementsInTable(self::TABLE, ['meetings_id' => $meetingId, 'work_type' => 'meeting'])) return $DB->update(self::TABLE, $data, ['meetings_id' => $meetingId, 'work_type' => 'meeting']);
-        $data['date_creation'] = date('Y-m-d H:i:s');
-        return (bool) $DB->insert(self::TABLE, $data);
+        $where = ['meetings_id' => $meetingId, 'work_type' => 'meeting'];
+        $previousTask = (int) ($DB->request(['SELECT' => ['projecttasks_id'], 'FROM' => self::TABLE, 'WHERE' => $where, 'LIMIT' => 1])->current()['projecttasks_id'] ?? 0);
+        if (countElementsInTable(self::TABLE, $where)) {
+            $ok = (bool) $DB->update(self::TABLE, $data, $where);
+        } else {
+            $data['date_creation'] = date('Y-m-d H:i:s');
+            $ok = (bool) $DB->insert(self::TABLE, $data);
+        }
+        if ($ok) {
+            foreach (array_unique(array_filter([$previousTask, max(0, $taskId)])) as $affected) $this->syncTaskEffectiveDuration((int) $affected);
+        }
+        return $ok;
     }
 
     public function deleteMeetingLog(int $meetingId): bool
@@ -53,7 +65,10 @@ class WorklogService
         // Treat that legacy state as already clean so the meeting can still be removed.
         if (!$exists) return true;
 
-        return $DB->delete(self::TABLE, $criteria);
+        $taskId = (int) ($DB->request(['SELECT' => ['projecttasks_id'], 'FROM' => self::TABLE, 'WHERE' => $criteria, 'LIMIT' => 1])->current()['projecttasks_id'] ?? 0);
+        $ok = (bool) $DB->delete(self::TABLE, $criteria);
+        if ($ok) $this->syncTaskEffectiveDuration($taskId);
+        return $ok;
     }
 
     public function getForTask(int $taskId, int $limit = 100): array
@@ -129,7 +144,79 @@ class WorklogService
         if ((int) $row['users_id'] !== (int) Session::getLoginUserID() && !Session::haveRight('config', UPDATE)) return false;
         $task = new ProjectTask();
         if (!$task->getFromDB($taskId) || !$task->canUpdateItem()) return false;
-        return (bool) $DB->delete(self::TABLE, ['id' => $id, 'projecttasks_id' => $taskId, 'work_type' => 'execution']);
+        $ok = (bool) $DB->delete(self::TABLE, ['id' => $id, 'projecttasks_id' => $taskId, 'work_type' => 'execution']);
+        if ($ok) $this->syncTaskEffectiveDuration($taskId);
+        return $ok;
+    }
+
+    /** Edit a manual execution entry (same ownership rules as delete). */
+    public function update(int $id, int $taskId, array $input): bool
+    {
+        global $DB;
+        if ($id <= 0 || $taskId <= 0 || !$DB->tableExists(self::TABLE)) return false;
+        $it = $DB->request(['FROM' => self::TABLE, 'WHERE' => ['id' => $id, 'projecttasks_id' => $taskId], 'LIMIT' => 1]);
+        if (!$it->count()) return false;
+        $row = $it->current();
+        if (($row['work_type'] ?? 'execution') !== 'execution' || (int) ($row['meetings_id'] ?? 0) > 0) return false;
+        if ((int) $row['users_id'] !== (int) Session::getLoginUserID() && !Session::haveRight('config', UPDATE)) return false;
+        $task = new ProjectTask();
+        if (!$task->getFromDB($taskId) || !$task->canUpdateItem()) return false;
+        $minutes = $this->minutesFromInput($input);
+        if ($minutes <= 0 || $minutes > 24 * 60) return false;
+        $data = [
+            'work_date' => $this->dateOnly($input['work_date'] ?? $row['work_date']) ?? $row['work_date'],
+            'minutes' => $minutes,
+            'comment' => mb_substr(trim(strip_tags((string) ($input['comment'] ?? $row['comment'] ?? ''))), 0, 4000),
+        ];
+        $ok = (bool) $DB->update(self::TABLE, $data, ['id' => $id, 'projecttasks_id' => $taskId, 'work_type' => 'execution']);
+        if ($ok) $this->syncTaskEffectiveDuration($taskId);
+        return $ok;
+    }
+
+    /**
+     * Hours per task of a project: [taskId => execution/meeting/total minutes + labels].
+     * Meetings linked to a task count for that task; project-level meetings stay at 0.
+     */
+    public function getTaskTotals(int $projectId): array
+    {
+        global $DB;
+        if (!$DB->tableExists(self::TABLE)) return [];
+        $out = [];
+        foreach ($DB->request([
+            'SELECT' => ['projecttasks_id', 'work_type', 'SUM' => 'minutes AS total'],
+            'FROM' => self::TABLE,
+            'WHERE' => ['projects_id' => $projectId, 'projecttasks_id' => ['>', 0]],
+            'GROUPBY' => ['projecttasks_id', 'work_type'],
+        ]) as $row) {
+            $taskId = (int) $row['projecttasks_id'];
+            $out[$taskId] ??= ['execution_minutes' => 0, 'meeting_minutes' => 0];
+            $key = ($row['work_type'] ?? 'execution') === 'meeting' ? 'meeting_minutes' : 'execution_minutes';
+            $out[$taskId][$key] += (int) $row['total'];
+        }
+        foreach ($out as &$item) {
+            $item['total_minutes'] = $item['execution_minutes'] + $item['meeting_minutes'];
+            $item['execution_label'] = self::formatMinutes($item['execution_minutes']);
+            $item['meeting_label'] = self::formatMinutes($item['meeting_minutes']);
+            $item['total_label'] = self::formatMinutes($item['total_minutes']);
+        }
+        unset($item);
+        return $out;
+    }
+
+    /**
+     * Mirror the hours of a task (execution + meetings) into the native ProjectTask
+     * `effective_duration` (seconds), so GLPI's own project/task screens and the Planning
+     * show the same effort.
+     */
+    public function syncTaskEffectiveDuration(int $taskId): void
+    {
+        global $DB;
+        if ($taskId <= 0 || !$DB->tableExists(self::TABLE)) return;
+        $row = $DB->request(['SELECT' => ['SUM' => 'minutes AS total'], 'FROM' => self::TABLE, 'WHERE' => ['projecttasks_id' => $taskId]])->current();
+        $seconds = max(0, (int) ($row['total'] ?? 0)) * 60;
+        $task = new ProjectTask();
+        if (!$task->getFromDB($taskId) || (int) ($task->fields['effective_duration'] ?? 0) === $seconds) return;
+        $task->update(['id' => $taskId, 'effective_duration' => $seconds]);
     }
 
     public static function formatMinutes(int $minutes): string

@@ -157,6 +157,8 @@ class ProgressRuleService
     private function notify(ProjectTask $task, array $rule, int $percent): void
     {
         global $CFG_GLPI;
+        // Paused project (state flagged "pausa o projeto"): no notification at all.
+        if ((new MetaService())->isProjectPaused((int) ($task->fields['projects_id'] ?? 0))) return;
         $notifier = new NotificationService();
         $taskId = (int) $task->getID();
         $recipients = [];

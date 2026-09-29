@@ -2,6 +2,62 @@
 
 ## 3.4.3 - 2026-09-23
 
+### Nome
+- Tela de plugins do GLPI: nome "Pellissari Project", autor "Kawan Costa" e licença proprietária (uso interno Pellissari e clientes autorizados). Pasta, chave `projectflow`, tabelas e URLs continuam iguais. Os dados são gravados em `glpi_plugins` uma vez, sem precisar reinstalar.
+- Licença alterada de GPL-3.0 para proprietária (`LICENSE`, `composer.json`, README).
+
+### Planejamento do GLPI
+- Tarefas passam a aparecer no Planejamento nativo do GLPI (Assistência > Planejamento) para o executor: o GLPI só mostra tarefa de projeto com início **e** fim planejados. Quando a tarefa tem só o prazo (ou só o início), a outra data é completada automaticamente a partir das horas planejadas (1h se não houver), em qualquer tela (Project Flow, Kanban ou formulário nativo).
+- Correção única das tarefas já existentes com só uma das datas (executada uma vez, flag `planning_dates_repaired`).
+
+### Contrato do projeto
+- Botão "Contrato" do projeto: sem contrato vinculado vira "Vincular contrato" (abre a vinculação); com contrato vinculado abre um popup que mostra o arquivo anexado ao contrato, sem baixar: PDF (visualizador do navegador), imagens, vídeo/áudio, texto, Word .docx (mammoth) e planilhas .xlsx/.xls/.ods/.csv (SheetJS). Outros formatos: aviso e "Abrir em nova aba". Vários arquivos/contratos aparecem em abas.
+- No popup: Abrir contrato no GLPI, Abrir em nova aba, Desvincular contrato (para vincular outro depois) e Fechar.
+- Novo endpoint `ajax/contract_file.php`: entrega o arquivo inline só se o usuário vê o projeto, o contrato está vinculado a ele e o documento está anexado a esse contrato; conteúdo ativo (HTML/SVG/XML/JS) nunca é executado (texto puro ou `<img>`, CSP sandbox). Bibliotecas em `public/lib` (licenças em THIRD-PARTY-LICENSES.txt).
+
+### Tela de templates
+- Redesenhada: cabeçalho com explicação e totais (templates e tarefas padrão), busca, e cards com faixa de cor pela contabilização, código, tipo, descrição (objetivo), nº de tarefas e horas planejadas, contabilização/horas previstas, modo de execução e responsável. Card "Novo template" no fim da grade e menu ⋮ com Editar / Abrir no GLPI.
+- "Criar projeto" no card abre o "Novo projeto" do painel já com o template aplicado (autocomplete + escolha de tarefas), em vez do formulário simples antigo.
+
+### Estado que pausa o projeto
+- Estados ganharam a opção "Pausa o projeto" (Configurações → Estados), como a de "Finalizado" (as duas são exclusivas). Enquanto o projeto estiver num estado assim: lembretes por e-mail das tarefas ficam retidos (saem quando o projeto voltar), as regras por andamento não enviam avisos, as notificações nativas do GLPI do projeto e das tarefas não são disparadas, e o projeto não conta como atrasado nem piora a saúde automática.
+- Selo "Pausado" no cabeçalho do projeto e no card do painel; selo "Pausa o projeto" na lista de estados. Nova coluna `is_paused` em `glpi_plugin_projectflow_stateprogress` (criada automaticamente).
+
+### Criar projeto / template
+- Template como autocomplete: ao escolher um template no "Novo projeto" (no campo ou pelo menu do botão), todas as abas são preenchidas com as definições dele (tipo, estado, prioridade, execução, responsável, grupo, datas, descrição, objetivo, portfólio, patrocinador, saúde, risco, contabilização, horas previstas, valor/hora…). Tudo continua editável antes de criar. Ação `template_info`.
+- Nova aba Tarefas no "Novo projeto": lista as tarefas do template (com hierarquia, tipo, marco e horas previstas), todas marcadas por padrão, com Marcar/Desmarcar todas. As desmarcadas não são criadas no projeto; subtarefas de uma tarefa desmarcada continuam e sobem para o nível acima.
+- Formulários de criação de projeto e de template reorganizados em abas numeradas, no estilo da tela de Configurações: Identificação, Planejamento, Governança, Contabilização (e Tarefas, no template). Botões Voltar/Próximo, etapas já vistas ficam marcadas, e "Criar" funciona de qualquer aba. Se faltar um campo obrigatório, a aba certa é aberta automaticamente.
+
+### Minhas tarefas
+- Indicadores da fila (Exibidas, Em atraso, Atenção, Vencem hoje, Próx. 7 dias) redesenhados no mesmo padrão do painel: cards com ícone, rótulo, número, cor por tipo e destaque do filtro ativo.
+
+### Reunião na tarefa
+- Formulário "Adicionar execução" em grade fixa (Data, Horas, Minutos, Descrição): a data não sobrepõe mais as horas.
+- Lançar execução e registrar reunião agora só pela barra de ações da tarefa. As abas Execuções e Reuniões ficaram só para editar/remover: o formulário aparece ao clicar em editar e some ao salvar/cancelar.
+- Novo: edição de lançamento de execução (data, duração e descrição), com as mesmas regras da remoção (o próprio autor ou administrador). Ação `worklog_update`.
+- O formulário "Adicionar reunião" da tarefa ganhou os campos que faltavam (iguais aos da reunião do projeto): Participantes, Decisões e Pendências / ações; Resumo virou texto de várias linhas. Layout em grade fixa: Data e hora não sobrepõe mais Horas/Minutos.
+- A lista de reuniões da tarefa mostra também Decisões e Pendências.
+
+### Horas + custo
+- Corrigido: os novos cards da aba de horas usavam a classe `pf-kpi`, a mesma dos indicadores do painel e de Minhas tarefas, e desalinhavam esses indicadores (ícone/rótulo/número centralizados em coluna). Os cards de horas passaram a usar `pf-hk-*`.
+- Indicadores do painel redesenhados: ícone à esquerda, rótulo em caixa alta e número à direita, alinhados à esquerda, com faixa de cor por tipo (ativos verde, atraso vermelho, atenção laranja, favoritos dourado, minhas tarefas azul) e destaque do filtro selecionado.
+- Resumo do cabeçalho do projeto (Responsável, Prazo, Progresso, Horas, Custo, Modo) em uma linha só, com colunas iguais, mesmo com o bloco de custo.
+- Indicadores da aba de horas refeitos: dois grupos (Horas e Financeiro) de cards iguais, com rótulo, valor e legenda em uma linha, barra de consumo no saldo e valores em formato brasileiro (R$ 1.234,56).
+- Novo modo de contabilização "Horas + custo" (além de "Horas" e "Custo financeiro"): o projeto tem horas previstas e valor por hora. Cada hora lançada (execução e reuniões) é valorizada automaticamente; o custo total = valor das horas + custos avulsos.
+- Aba de horas mostra valor das horas, valor previsto (horas previstas × valor/hora), custo total, valor por tarefa e por lançamento (somente para a gestão do projeto).
+- Custos avulsos: lista com data, descrição e valor, lançamento com data e remoção (também no modo Custo financeiro).
+- Valor por hora configurável na criação do projeto, do template, ao criar a partir de template (vazio = do template) e nas configurações do projeto. Nova coluna `hour_rate` em `glpi_plugin_projectflow_projectmeta` (criada automaticamente).
+
+### Execução do projeto
+- Botão "Novo projeto" do painel virou um menu único: em qualquer ponto do botão abrem as opções Projeto em branco, os templates disponíveis, Criar template (abre direto o formulário na tela de templates) e Gerenciar templates.
+- Estados permitidos por tarefa: cada tarefa pode limitar para quais estados pode ir (na criação da tarefa, no painel da tarefa e em cada tarefa do template). A troca de estado da tarefa só oferece os estados marcados, o Kanban bloqueia soltar o card numa coluna não liberada (colunas esmaecidas durante o arraste) e o servidor recusa estados fora da lista. O estado atual da tarefa sempre fica liberado. Todos marcados = sem restrição.
+- O executor da tarefa (usuário da equipe da tarefa, direto ou via grupo) nunca altera os estados permitidos: no painel da tarefa ele vê a lista só para leitura e o servidor recusa a alteração (inclusive na criação, quando ele se coloca como executor). Quem define é quem pode editar o projeto; o responsável pelo projeto pode mesmo sendo executor.
+- Projetos criados a partir de um template (ou templates copiados) agora herdam os dados do plugin de cada tarefa: estados permitidos, prioridade, solicitante e ponto de atenção.
+- Nova coluna `allowed_states` em `glpi_plugin_projectflow_taskmeta` (criada automaticamente, sem reinstalar).
+- A aba Execução ganhou alternância Kanban / Lista (a escolha fica lembrada no navegador); a lista deixou de aparecer sempre abaixo do quadro.
+- A busca filtra tanto os cards quanto as linhas da lista.
+- Removido o botão "Nova tarefa" duplicado da barra da execução (permanece o do cabeçalho).
+
 ### Correções
 - **Minhas tarefas / Todas as visíveis**: o limite de linhas passa a ser aplicado depois dos filtros (minhas, finalizadas, permissão) e a fila não depende mais do limite de 1000 projetos do portfólio. Tarefas de projetos antigos voltam a aparecer.
 - **Cron `taskreminders`**: nova coluna `reminder_attempts`. Lembretes que falham descem na fila e são abandonados (com log) após 24 tentativas, sem bloquear lembretes novos. Usuários inativos ou excluídos não são mais notificados.
@@ -36,6 +92,57 @@
 - `ProjectService::create()` passa a atender projetos e templates (`createTemplate()` delega para ele). Ao copiar uma origem, os metadados do Project Flow dela (modos, horas previstas, portfólio...) são herdados quando o campo fica em branco.
 - Depois de criado, o template abre no workspace do Project Flow para receber tarefas, com o selo "Template" e o caminho de volta para Templates.
 - Os cards de template mostram a quantidade de tarefas e as ações **Usar**, **Editar** e o formulário nativo.
+
+### Campos mais compactos
+- Revisão de todos os campos de texto e seleção do plugin: altura única de 34 px (30 px nos pequenos), texto de 13 px, rótulos menores e espaçamento vertical reduzido. Isso vale para portfólio, projeto, tarefa (inclusive o popup), templates, Minhas tarefas, Configurações e todos os modais.
+- Textareas com altura mínima menor e redimensionáveis. Filtros, buscas, campos de cor e campos numéricos ganharam largura máxima, e nas Configurações os campos param de ocupar a linha inteira.
+- Ajustes feitos na revisão tela a tela: o topo dos modais longos não fica mais cortado; as linhas de tarefa do template cabem no modal, sem rolagem lateral; os botões de editar e excluir ficam lado a lado nas listas de Estados e Tipos; a filtragem de Minhas tarefas e do portfólio fica em uma linha que quebra de forma organizada; o campo do relatório semanal mantém o tamanho de documento; e a aba de IA ficou alinhada.
+- Campos numéricos (%, horas, minutos, limites, ID de chamado) ficam estreitos, com 110 a 140 px, número alinhado à direita e algarismos de largura fixa, em vez de ocupar a coluna inteira. Os grupos com sufixo ("%", "dias") encolhem junto.
+- Cada campo tem a largura do conteúdo que recebe: seleções de lista (estado, prioridade, tipo, modo, responsável, grupo, entidade) até 240 px; listas com nomes longos (tarefa, projeto, template, contrato) até 360 px; datas 200 px; código 160 px; portfólio, patrocinador e modelo de IA até 240 px; cor 56 px. Só nome, título, descrição, observação e busca ocupam a coluna inteira.
+- Formulários de lançamento (execução, reunião, dependência, chamado): os campos deixam de ter largura mínima fixa, horas e minutos têm 80 px e a descrição preenche o resto. As mensagens de lista vazia ocupam a linha toda, em vez de quebrar palavra por palavra.
+- Botões e grupos de campo ("%", "dias") alinhados à mesma altura dos campos.
+
+### Configurações em abas
+- O cabeçalho grande da tela de Configurações deu lugar a um menu de abas clicáveis: **Geral**, **Estados**, **Tipos**, **Regras por andamento** e **Inteligência artificial**. A aba escolhida fica no endereço (`#states`, `#ai`...) e é lembrada na próxima visita.
+- A barra "Salvar configurações" só aparece nas abas Geral e Inteligência artificial. As outras abas salvam cada item na hora.
+- Saiu o bloco "Percentual por estado" (e o exemplo de fluxo), que duplicava o campo "% no Kanban" da aba Estados.
+
+### Tela da tarefa
+- O botão **Salvar** do painel direito fica abaixo de **Atores** e continua fixo no rodapé do painel durante a rolagem. Ele é associado ao formulário pelo atributo `form`.
+
+### Minhas tarefas: concluídas
+- Corrige "Incluir concluídas" em **Minhas tarefas**, que não mostrava nenhuma tarefa concluída. A fila usava `ProjectTask::getActiveProjectTaskIDsForUser()`, que só devolve tarefas abertas. Agora o plugin identifica as tarefas do usuário pela equipe da tarefa: o próprio usuário ou um dos seus grupos.
+- O botão virou **Mostrar concluídas** / **Ocultar concluídas**, com texto e destaque quando está ativo.
+
+### Andamento pelo estado
+- O percentual da tarefa deixa de ser editável: ele sempre segue o percentual configurado para o estado (estado finalizado = 100%). A regra vale no Project Flow, no Kanban, nas ações em massa e no formulário nativo do GLPI (hooks `pre_item_add`/`pre_item_update` de `ProjectTask`). O progresso automático nativo da tarefa fica desligado.
+- Na tela da tarefa, o campo **Andamento** do painel direito virou uma barra somente leitura, com o aviso "Definido pelo estado". O bloco de resumo do canto inferior esquerdo (status, andamento, solicitante e data limite) foi removido, porque duplicava os campos do painel direito.
+- Em Configurações, a opção "Progresso automático pelo Kanban" passa a ser fixa: o andamento sempre acompanha o estado.
+
+### Minhas tarefas
+- Clicar em uma tarefa (linha, ID, nome ou seta) abre a tela de execução em um **popup** grande, sem sair da fila. Ctrl/Cmd+clique ou o botão do meio continuam abrindo em nova aba, e o popup tem o botão **Tela cheia**.
+- A tela da tarefa ganhou o modo `?embed=1` (sem menu do GLPI). Dentro do popup, outras tarefas abrem no próprio popup e os links de projeto, chamados e ativos abrem na janela principal.
+- Ao fechar o popup depois de alguma alteração, a fila é recarregada para refletir estado, andamento e prazos.
+
+### Relatório com IA (Gemini)
+- Nova seção **Inteligência artificial** nas Configurações, com ativação, chave da API do Gemini (criptografada com GLPIKey e nunca devolvida ao navegador), modelo (padrão `gemini-3.8-flash`), botão **Testar**, que valida a chave e lista os modelos disponíveis, e instruções adicionais da empresa.
+- A aba **Relatório semanal** ganha o botão **Gerar com IA**, com escopo "semana selecionada" ou "projeto inteiro". Em **uma única requisição** `generateContent` vão o projeto, as horas (período, acumulado, previsto e saldo), as reuniões do projeto e todas as tarefas, com comentários, execuções, reuniões, prazos, pontos de atenção e executores.
+- O texto volta para a mesma área do relatório, com modelo e tokens usados, e pode ser editado e salvo como versão. O gerador sem IA continua disponível.
+- O prompt proíbe inventar dados e segue a estrutura do relatório do Project Flow. As chamadas usam o proxy configurado no GLPI.
+- Resiliência: quando o Gemini responde 429/500/502/503/504, a chamada é refeita até 3 vezes (espera de 2s e 6s, respeitando `Retry-After`). Se o modelo continuar sobrecarregado, o **modelo reserva** configurado é usado uma vez (padrão `gemini-3.5-flash`). As mensagens de erro aparecem em português.
+- Só quem pode editar o projeto gera com IA, para controlar o custo.
+
+### Documentos
+- Um documento anexado a uma tarefa passa a ser anexado também ao projeto dela. É o mesmo documento nativo, com um vínculo `Document_Item` a mais e sem cópia do arquivo. Vale para o Project Flow e para o formulário nativo do GLPI, pelo hook `item_add`.
+- Em **Arquivos do projeto**, cada documento mostra a origem ("Tarefa: #12 Nome", com link, ou "Anexado no projeto") e ganhou botão de download.
+- Documentos anexados a tarefas antes desta versão também aparecem no projeto, identificados pela tarefa de origem.
+- Desvincular um documento do projeto não o remove da tarefa de origem.
+
+### Horas por tarefa
+- O botão **Nova tarefa** também aparece no cabeçalho do projeto, em qualquer aba. Antes ele só existia dentro da aba Execução.
+- A aba **Horas** ganhou a tabela "Horas dedicadas em cada tarefa", com execução, reuniões, total, previsto e barra de consumo (vermelha acima de 100%), além do total das tarefas no rodapé. O total do projeto continua incluindo as reuniões sem tarefa.
+- Os cards do Kanban e a lista de tarefas mostram as horas gastas e, quando houver previsão, horas gastas/previstas.
+- As horas da tarefa (execução e reuniões) passam a ser copiadas para a `effective_duration` nativa da `ProjectTask` a cada lançamento, edição ou remoção, e aparecem também nas telas nativas do GLPI.
 
 ### Configurações
 - **Estados de projetos e tarefas:** criar, editar e excluir estados (nome, cor, finalizado, % no Kanban e comentário). Projetos e tarefas compartilham a lista de estados, como no GLPI. Um estado só pode ser excluído quando nenhum projeto ou tarefa o usa, quando não é o estado inicial configurado e quando não é destino de uma regra.

@@ -1,4 +1,5 @@
-<div class="pf-app pf-native-task-v34" id="projectflow-task"
+<div class="pf-app pf-native-task-v34 {{ embed|default(false) ? 'is-embedded' : '' }}" id="projectflow-task"
+     data-embed="{{ embed|default(false) ? '1' : '0' }}"
      data-ui-version="3.4.3-native"
      data-task-id="{{ task.id }}"
      data-project-id="{{ project.id }}"
@@ -22,17 +23,11 @@
         <button type="button" data-pf-task-tab="history"><i class="ti ti-history"></i><span>Histórico</span>{% if task.history.total is not null %}<em>{{ task.history.total }}</em>{% endif %}</button>
       </nav>
 
-      <div class="pf34-left-summary">
-        <div><span>Status</span><strong><i class="pf34-state-dot" style="--pf-state-color:{{ task.state.color }}"></i>{{ task.state.name }}</strong></div>
-        <div><span>Andamento</span><strong>{{ task.percent_done }}%</strong><div class="pf34-mini-progress"><i style="width:{{ task.percent_done }}%"></i></div></div>
-        <div><span>Solicitado por</span><strong>{{ task.requester_name }}</strong></div>
-        <div><span>Data limite</span><strong class="{{ task.is_overdue ? 'pf-text-danger' : '' }}">{{ task.plan_end_date ? task.plan_end_date|date('d/m/Y H:i') : 'Não definido' }}</strong></div>
-      </div>
     </aside>
 
     <header class="pf34-titlebar">
       <div class="pf34-titlebar-left">
-        <a class="pf34-back" href="{{ tasks_url }}" title="Voltar para Minhas tarefas"><i class="ti ti-arrow-left"></i></a>
+        {% if not embed|default(false) %}<a class="pf34-back" href="{{ tasks_url }}" title="Voltar para Minhas tarefas"><i class="ti ti-arrow-left"></i></a>{% endif %}
       </div>
       <div class="pf34-titlebar-main">
         <i class="pf34-state-dot pf34-state-dot-lg" style="--pf-state-color:{{ task.state.color }}"></i>
@@ -85,18 +80,23 @@
         <section class="pf-itil-pane-card">
           <div class="pf-itil-section-title"><div><span>Tempo</span><h2>Execuções</h2></div><div class="pf-time-filter"><div class="btn-group btn-group-sm" role="group" aria-label="Filtro de execuções"><button type="button" class="btn btn-outline-secondary is-active" data-pf-time-filter="mine" data-time-kind="execution">Minhas</button><button type="button" class="btn btn-outline-secondary" data-pf-time-filter="all" data-time-kind="execution">Todas</button></div><strong class="pf-itil-pane-total" data-pf-time-total="execution" data-mine-total="{{ my_worklog_total_label }}" data-all-total="{{ worklog_total_label }}">{{ my_worklog_total_label }}</strong></div></div>
           <p class="pf-help-text">Horas dedicadas à execução desta tarefa. Cada lançamento fica associado ao usuário que o registrou.</p>
+          <p class="pf-help-text pf-add-hint"><i class="ti ti-info-circle"></i> Para lançar uma nova execução use <strong>Adicionar execução</strong> na barra de ações abaixo. Aqui você edita ou remove o que já foi lançado.</p>
           {% if task.can_update %}
-            <form id="pf-worklog-form" class="pf-itil-entry-form">
-              <div><label class="form-label">Data</label><input type="date" name="work_date" value="{{ 'now'|date('Y-m-d') }}" class="form-control" required></div>
-              <div><label class="form-label">Horas</label><input type="number" name="hours" min="0" max="24" step="0.25" class="form-control" value="1"></div>
-              <div><label class="form-label">Minutos</label><input type="number" name="minutes" min="0" max="59" step="5" class="form-control" value="0"></div>
-              <div class="pf-grow"><label class="form-label">Descrição</label><input name="comment" class="form-control" placeholder="Ex.: análise, configuração, desenvolvimento, homologação..."></div>
-              <button class="btn btn-primary"><i class="ti ti-clock-plus"></i> Lançar</button>
+            <form id="pf-worklog-edit-form" class="pf-edit-entry-form d-none">
+              <input type="hidden" name="worklog_id" value="0">
+              <div class="pf-edit-entry-title"><i class="ti ti-edit"></i> Editar execução</div>
+              <div class="pf-exec-form-grid">
+                <label>Data<input type="date" name="work_date" class="form-control" required></label>
+                <label class="pf-ef-num">Horas<input type="number" name="hours" min="0" max="24" step="1" class="form-control"></label>
+                <label class="pf-ef-num">Minutos<input type="number" name="minutes" min="0" max="59" step="5" class="form-control"></label>
+                <label class="pf-ef-grow">Descrição<input name="comment" class="form-control" maxlength="4000" required></label>
+              </div>
+              <div class="pf-form-actions"><button type="button" class="btn btn-outline-secondary pf-worklog-edit-cancel">Cancelar</button><button type="submit" class="btn btn-primary"><i class="ti ti-device-floppy"></i> Salvar execução</button></div>
             </form>
           {% endif %}
           <div class="pf-itil-data-list" id="pf-worklog-list">
             {% for log in task.worklogs %}
-              <div class="pf-time-entry-row" data-pf-time-kind="execution" data-user-id="{{ log.user_id }}"><i class="ti ti-clock"></i><div><strong>{{ log.duration_label }} · {{ log.comment ?: 'Execução da tarefa' }}</strong><span>{{ log.work_date|date('d/m/Y') }} · {{ log.user_name }}</span></div>{% if log.can_delete %}<button class="btn btn-sm btn-ghost-danger pf-worklog-delete" data-id="{{ log.id }}"><i class="ti ti-trash"></i></button>{% endif %}</div>
+              <div class="pf-time-entry-row" data-pf-time-kind="execution" data-user-id="{{ log.user_id }}"><i class="ti ti-clock"></i><div><strong>{{ log.duration_label }} · {{ log.comment ?: 'Execução da tarefa' }}</strong><span>{{ log.work_date|date('d/m/Y') }} · {{ log.user_name }}</span></div>{% if log.can_delete %}<div class="pf-row-actions"><button type="button" class="btn btn-sm btn-ghost-secondary pf-worklog-edit" title="Editar lançamento" data-id="{{ log.id }}" data-date="{{ log.work_date|date('Y-m-d') }}" data-minutes="{{ log.minutes }}" data-comment="{{ log.comment|e('html_attr') }}"><i class="ti ti-edit"></i></button><button type="button" class="btn btn-sm btn-ghost-danger pf-worklog-delete" title="Remover lançamento" data-id="{{ log.id }}"><i class="ti ti-trash"></i></button></div>{% endif %}</div>
             {% else %}<div class="pf-empty-inline">Nenhuma hora lançada nesta tarefa.</div>{% endfor %}
             <div class="pf-empty-inline d-none" data-pf-time-empty="execution">Você ainda não lançou horas de execução nesta tarefa.</div>
           </div>
@@ -107,8 +107,10 @@
         <section class="pf-itil-pane-card">
           <div class="pf-itil-section-title"><div><span>Alinhamentos</span><h2>Reuniões</h2></div><div class="pf-time-filter"><div class="btn-group btn-group-sm" role="group" aria-label="Filtro de reuniões"><button type="button" class="btn btn-outline-secondary is-active" data-pf-time-filter="mine" data-time-kind="meeting">Minhas</button><button type="button" class="btn btn-outline-secondary" data-pf-time-filter="all" data-time-kind="meeting">Todas</button></div><strong class="pf-itil-pane-total" data-pf-time-total="meeting" data-mine-total="{{ my_meeting_total_label }}" data-all-total="{{ meeting_total_label }}">{{ my_meeting_total_label }}</strong></div></div>
           <p class="pf-help-text">Reuniões são registradas separadamente da execução e contabilizadas como horas de reunião no projeto.</p>
+          <p class="pf-help-text pf-add-hint"><i class="ti ti-info-circle"></i> Para registrar uma nova reunião use <strong>Adicionar reunião</strong> na barra de ações abaixo. Aqui você edita ou remove as reuniões já registradas.</p>
           {% if task.can_update %}
-            <form id="pf-task-meeting-form" class="pf-itil-meeting-form">
+            <form id="pf-task-meeting-form" class="pf-itil-meeting-form pf-edit-entry-form d-none">
+              <div class="pf-edit-entry-title"><i class="ti ti-edit"></i> Editar reunião</div>
               <input type="hidden" name="meeting_id" value="0">
               <div class="row g-3">
                 <div class="col-md-6"><label class="form-label">Título</label><input name="title" class="form-control" placeholder="Ex.: Alinhamento com cliente" required></div>
@@ -119,12 +121,12 @@
                 <div class="col-md-4"><label class="form-label">Decisões</label><textarea name="decisions" class="form-control" rows="3"></textarea></div>
                 <div class="col-md-4"><label class="form-label">Pendências / ações</label><textarea name="actions" class="form-control" rows="3"></textarea></div>
               </div>
-              <div class="pf-form-actions"><button type="button" class="btn btn-outline-secondary pf-task-meeting-reset d-none">Cancelar edição</button><button type="submit" class="btn btn-primary" id="pf-task-meeting-submit"><i class="ti ti-calendar-plus"></i> Registrar reunião</button></div>
+              <div class="pf-form-actions"><button type="button" class="btn btn-outline-secondary pf-task-meeting-reset">Cancelar</button><button type="submit" class="btn btn-primary" id="pf-task-meeting-submit"><i class="ti ti-device-floppy"></i> Salvar reunião</button></div>
             </form>
           {% endif %}
           <div class="pf-itil-data-list pf-meeting-list">
             {% for meeting in meetings %}
-              <div class="pf-meeting-row pf-time-entry-row" data-pf-time-kind="meeting" data-user-id="{{ meeting.user_id }}"><i class="ti ti-calendar-event"></i><div><strong>{{ meeting.title }}</strong><span>{{ meeting.start_at|date('d/m/Y H:i') }} · {{ meeting.duration_label }} · {{ meeting.user_name }}</span>{% if meeting.participants %}<small>Participantes: {{ meeting.participants }}</small>{% endif %}{% if meeting.summary %}<p>{{ meeting.summary }}</p>{% endif %}</div>{% if meeting.can_update %}<div class="pf-row-actions"><button class="btn btn-sm btn-ghost-secondary pf-task-meeting-edit" data-id="{{ meeting.id }}" data-title="{{ meeting.title|e('html_attr') }}" data-start="{{ meeting.start_at|date('Y-m-d\\TH:i') }}" data-duration="{{ meeting.duration_minutes }}" data-participants="{{ meeting.participants|e('html_attr') }}" data-summary="{{ meeting.summary|e('html_attr') }}" data-decisions="{{ meeting.decisions|e('html_attr') }}" data-actions="{{ meeting.actions|e('html_attr') }}"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-ghost-danger pf-task-meeting-delete" data-id="{{ meeting.id }}"><i class="ti ti-trash"></i></button></div>{% endif %}</div>
+              <div class="pf-meeting-row pf-time-entry-row" data-pf-time-kind="meeting" data-user-id="{{ meeting.user_id }}"><i class="ti ti-calendar-event"></i><div><strong>{{ meeting.title }}</strong><span>{{ meeting.start_at|date('d/m/Y H:i') }} · {{ meeting.duration_label }} · {{ meeting.user_name }}</span>{% if meeting.participants %}<small>Participantes: {{ meeting.participants }}</small>{% endif %}{% if meeting.summary %}<p>{{ meeting.summary }}</p>{% endif %}{% if meeting.decisions %}<p><strong>Decisões:</strong> {{ meeting.decisions }}</p>{% endif %}{% if meeting.actions %}<p><strong>Pendências:</strong> {{ meeting.actions }}</p>{% endif %}</div>{% if meeting.can_update %}<div class="pf-row-actions"><button class="btn btn-sm btn-ghost-secondary pf-task-meeting-edit" data-id="{{ meeting.id }}" data-title="{{ meeting.title|e('html_attr') }}" data-start="{{ meeting.start_at|date('Y-m-d\\TH:i') }}" data-duration="{{ meeting.duration_minutes }}" data-participants="{{ meeting.participants|e('html_attr') }}" data-summary="{{ meeting.summary|e('html_attr') }}" data-decisions="{{ meeting.decisions|e('html_attr') }}" data-actions="{{ meeting.actions|e('html_attr') }}"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-ghost-danger pf-task-meeting-delete" data-id="{{ meeting.id }}"><i class="ti ti-trash"></i></button></div>{% endif %}</div>
             {% else %}<div class="pf-empty-inline">Nenhuma reunião vinculada a esta tarefa.</div>{% endfor %}
             <div class="pf-empty-inline d-none" data-pf-time-empty="meeting">Você ainda não registrou reuniões nesta tarefa.</div>
           </div>
@@ -205,22 +207,25 @@
             </form>
 
             <form id="pf-worklog-quick-form" class="pf-quick-mode d-none" data-pf-quick-mode="execution">
-              <div class="pf-quick-grid pf-quick-grid-execution">
-                <label>Data<input type="date" name="work_date" value="{{ 'now'|date('Y-m-d') }}" class="form-control" required></label>
-                <label>Horas<input type="number" name="hours" min="0" max="24" step="1" class="form-control" value="1"></label>
-                <label>Minutos<input type="number" name="minutes" min="0" max="59" step="5" class="form-control" value="0"></label>
-                <label class="pf-grow">Descrição<input name="comment" class="form-control" placeholder="O que foi executado?" required></label>
+              <div class="pf-exec-form-grid">
+                <label>Data *<input type="date" name="work_date" value="{{ 'now'|date('Y-m-d') }}" class="form-control" required></label>
+                <label class="pf-ef-num">Horas<input type="number" name="hours" min="0" max="24" step="1" class="form-control" value="1"></label>
+                <label class="pf-ef-num">Minutos<input type="number" name="minutes" min="0" max="59" step="5" class="form-control" value="0"></label>
+                <label class="pf-ef-grow">Descrição *<input name="comment" class="form-control" maxlength="4000" placeholder="O que foi executado?" required></label>
               </div>
               <div class="pf-quick-form-footer"><small><i class="ti ti-clock"></i> O lançamento aparecerá em Execuções</small><button class="btn btn-warning"><i class="ti ti-clock-plus"></i> Lançar execução</button></div>
             </form>
 
             <form id="pf-meeting-quick-form" class="pf-quick-mode d-none" data-pf-quick-mode="meeting">
-              <div class="pf-quick-grid pf-quick-grid-meeting">
-                <label class="pf-grow">Reunião<input name="title" class="form-control" placeholder="Ex.: alinhamento com o cliente" required></label>
-                <label>Data e hora<input type="datetime-local" name="start_at" value="{{ 'now'|date('Y-m-d\\TH:i') }}" class="form-control" required></label>
-                <label>Horas<input type="number" name="hours" min="0" max="24" step="1" class="form-control" value="1"></label>
-                <label>Minutos<input type="number" name="minutes" min="0" max="59" step="5" class="form-control" value="0"></label>
-                <label class="pf-grow">Resumo<input name="summary" class="form-control" placeholder="Assunto, decisão ou observação"></label>
+              <div class="pf-meeting-form-grid">
+                <label class="pf-mf-title">Reunião *<input name="title" class="form-control" maxlength="255" placeholder="Ex.: alinhamento com o cliente" required></label>
+                <label class="pf-mf-date">Data e hora *<input type="datetime-local" name="start_at" value="{{ 'now'|date('Y-m-d\\TH:i') }}" class="form-control" required></label>
+                <label class="pf-mf-num">Horas<input type="number" name="hours" min="0" max="24" step="1" class="form-control" value="1"></label>
+                <label class="pf-mf-num">Minutos<input type="number" name="minutes" min="0" max="59" step="5" class="form-control" value="0"></label>
+                <label class="pf-mf-full">Participantes<input name="participants" class="form-control" placeholder="Nomes, grupos ou cliente (ex.: João, Maria, equipe do cliente)"></label>
+                <label class="pf-mf-full">Resumo<textarea name="summary" class="form-control" rows="2" placeholder="Assunto tratado na reunião"></textarea></label>
+                <div class="pf-mf-pair"><label class="pf-mf-half">Decisões<textarea name="decisions" class="form-control" rows="2" placeholder="O que ficou decidido"></textarea></label>
+                <label class="pf-mf-half">Pendências / ações<textarea name="actions" class="form-control" rows="2" placeholder="Quem faz o quê e até quando"></textarea></label></div>
               </div>
               <div class="pf-quick-form-footer"><small><i class="ti ti-calendar-event"></i> O tempo será contabilizado como reunião</small><button class="btn btn-warning"><i class="ti ti-calendar-plus"></i> Lançar reunião</button></div>
             </form>
@@ -248,8 +253,13 @@
         {% if task.can_update %}
           <form id="pf-task-control-form" class="pf34-property-form">
             <div class="pf34-field-row"><label>Estado</label><select name="projectstates_id" class="form-select">{% for state in states %}<option value="{{ state.id }}" {{ state.id == task.state.id ? 'selected' : '' }}>{{ state.name }}</option>{% endfor %}</select></div>
+{% if task.can_manage_states %}
+            <div class="pf34-field-row pf-task-states-picker"><label>Estados permitidos</label><div><input type="hidden" class="pf-task-states-value" name="allowed_states" value="{{ task.allowed_state_ids|join(',') }}"><div class="pf-state-chips">{% for state in states %}<label class="pf-state-chip"><input type="checkbox" class="form-check-input pf-task-state-check" value="{{ state.id }}" {{ not task.allowed_state_ids or state.id in task.allowed_state_ids ? 'checked' : '' }}><span class="pf-column-dot" style="--pf-state-color:{{ state.color }}"></span><span>{{ state.name }}</span></label>{% endfor %}</div></div></div>
+{% else %}
+            <div class="pf34-field-row pf-task-states-picker pf-task-states-readonly"><label>Estados permitidos</label><div><input type="hidden" class="pf-task-states-value" value="{{ task.allowed_state_ids|join(',') }}"><div class="pf-state-chips">{% if task.allowed_state_ids %}{% for state in states %}{% if state.id in task.allowed_state_ids %}<span class="pf-state-chip is-static"><span class="pf-column-dot" style="--pf-state-color:{{ state.color }}"></span><span>{{ state.name }}</span></span>{% endif %}{% endfor %}{% else %}<span class="text-muted small">Todos os estados</span>{% endif %}</div><small class="text-muted"><i class="ti ti-lock"></i> Definido pela gestão do projeto.</small></div></div>
+{% endif %}
             <div class="pf34-field-row"><label>Prioridade</label><select name="priority" class="form-select">{% for p in priorities %}<option value="{{ p.id }}" {{ p.id == task.priority ? 'selected' : '' }}>{{ p.name }}</option>{% endfor %}</select></div>
-            <div class="pf34-field-row"><label>Andamento</label><div class="pf34-progress-field"><input type="number" name="percent_done" class="form-control" min="0" max="100" step="5" value="{{ task.percent_done }}"><span>%</span></div></div>
+            <div class="pf34-field-row"><label>Andamento</label><div class="pf34-progress-readonly" title="O andamento é definido pelo estado da tarefa (Configurações → percentual por estado)."><strong>{{ task.percent_done }}%</strong><div class="pf34-mini-progress"><i style="width:{{ task.percent_done }}%"></i></div><small>Definido pelo estado</small></div></div>
             <div class="pf34-field-row"><label>Tipo</label><select name="projecttasktypes_id" class="form-select"><option value="0">Não definido</option>{% for type in task_types %}<option value="{{ type.id }}" {{ type.id == task.projecttasktypes_id ? 'selected' : '' }}>{{ type.name }}</option>{% endfor %}</select></div>
             <div class="pf34-field-row"><label>Projeto</label><a class="pf34-readonly-field" href="{{ project.plugin_url }}"><span>{{ project.name }}</span><i class="ti ti-external-link"></i></a></div>
             <div class="pf34-field-row"><label>Solicitante</label><select name="requester_users_id" class="form-select"><option value="0">Não definido</option>{% for user in users %}<option value="{{ user.id }}" {{ user.id == task.requester_user_id ? 'selected' : '' }}>{{ user.name }}</option>{% endfor %}</select></div>
@@ -260,7 +270,6 @@
             <div class="pf34-field-row"><label>Observação</label><input name="attention_note" class="form-control" value="{{ task.attention_note }}" placeholder="Ex.: aguardando credenciais"></div>
             <div class="pf34-field-row"><label>Lembrete</label><input type="datetime-local" name="reminder_at" class="form-control" value="{{ task.reminder_at ? task.reminder_at|date('Y-m-d\\TH:i') : '' }}"></div>
             <div class="pf34-field-row"><label>Notificar</label><div class="pf34-inline-checks"><label><input type="checkbox" name="reminder_browser" value="1" {{ task.reminder_browser ? 'checked' : '' }}> Project Flow</label><label><input type="checkbox" name="reminder_email" value="1" {{ task.reminder_email ? 'checked' : '' }}> E-mail</label></div></div>
-            <div class="pf34-savebar"><button type="submit" class="btn btn-warning"><i class="ti ti-device-floppy"></i> Salvar</button></div>
           </form>
         {% else %}
           <dl class="pf34-readonly-list"><div><dt>Estado</dt><dd>{{ task.state.name }}</dd></div><div><dt>Andamento</dt><dd>{{ task.percent_done }}%</dd></div><div><dt>Prioridade</dt><dd>{{ task.priority_name }}</dd></div><div><dt>Projeto</dt><dd><a href="{{ project.plugin_url }}">{{ project.name }}</a></dd></div><div><dt>Solicitante</dt><dd>{{ task.requester_name }}</dd></div><div><dt>Data limite</dt><dd>{{ task.plan_end_date ? task.plan_end_date|date('d/m/Y H:i') : 'Não definido' }}</dd></div></dl>
@@ -275,6 +284,11 @@
         <div class="pf-task-team-list">{% for member in task.team %}<div class="pf34-person"><div class="pf34-avatar">{{ member.name|slice(0,2)|upper }}</div><div><strong>{{ member.name }}</strong><span>{{ member.type_label }}</span></div>{% if task.can_update %}<button class="btn btn-sm btn-ghost-danger pf-task-team-remove" data-id="{{ member.relation_id }}"><i class="ti ti-x"></i></button>{% endif %}</div>{% else %}<div class="pf-empty-inline">Sem executor definido.</div>{% endfor %}</div>
         {% if task.can_update %}<form id="pf-task-team-form" class="pf34-actor-form"><select name="itemtype" class="form-select pf-member-type"><option value="User">Usuário</option><option value="Group">Grupo</option><option value="Supplier">Fornecedor</option><option value="Contact">Contato</option></select><select name="items_id" class="form-select pf-member-select"><option value="">Selecione...</option>{% for user in users %}<option data-kind="User" value="{{ user.id }}">{{ user.name }}</option>{% endfor %}{% for group in groups %}<option data-kind="Group" value="{{ group.id }}">{{ group.name }}</option>{% endfor %}{% for supplier in suppliers %}<option data-kind="Supplier" value="{{ supplier.id }}">{{ supplier.name }}</option>{% endfor %}{% for contact in contacts %}<option data-kind="Contact" value="{{ contact.id }}">{{ contact.name }}</option>{% endfor %}</select><button class="btn btn-outline-secondary" title="Adicionar executor"><i class="ti ti-user-plus"></i></button></form>{% endif %}
       </section>
+
+      {% if task.can_update %}
+      {# Outside the form on purpose: sticky at the bottom of the panel, below "Atores". #}
+      <div class="pf34-savebar"><button type="submit" form="pf-task-control-form" class="btn btn-warning"><i class="ti ti-device-floppy"></i> Salvar</button></div>
+      {% endif %}
     </aside>
   </div>
 
