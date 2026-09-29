@@ -8,7 +8,7 @@ if (!defined('GLPI_ROOT')) {
     die('Direct access not allowed');
 }
 
-define('PLUGIN_PROJECTFLOW_VERSION', '3.4.3');
+define('PLUGIN_PROJECTFLOW_VERSION', '3.5.0');
 define('PLUGIN_PROJECTFLOW_GLPI_MIN', '11.0.0');
 define('PLUGIN_PROJECTFLOW_GLPI_MAX', '11.0.99');
 
@@ -126,8 +126,8 @@ function plugin_projectflow_register_assets(): void
         $meta = @filemtime($file) . '-' . @filesize($file);
         return $relative . '?h=' . substr(sha1($meta), 0, 10);
     };
-    $css = $stamp('css/projectflow-3.4.3.css');
-    $js = $stamp('js/projectflow-3.4.3.js');
+    $css = $stamp('css/projectflow-3.5.0.css');
+    $js = $stamp('js/projectflow-3.5.0.js');
 
     $PLUGIN_HOOKS[Hooks::ADD_CSS]['projectflow'] ??= [];
     $PLUGIN_HOOKS[Hooks::ADD_JAVASCRIPT]['projectflow'] ??= [];

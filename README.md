@@ -1,4 +1,4 @@
-# Project Flow 3.4.3 para GLPI 11
+# Pellissari Project (Project Flow) 3.5.0 para GLPI 11
 
 Project Flow é uma camada operacional de gestão de projetos para **GLPI 11.x**, desenhada para reduzir a complexidade do módulo nativo sem substituir seus objetos principais. Projeto, tarefa, equipe, estados, planejamento, chamados, documentos, contratos e permissões continuam integrados ao GLPI; o plugin acrescenta a experiência de trabalho que faltava para gestores e executores.
 

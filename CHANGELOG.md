@@ -1,6 +1,10 @@
 # Changelog
 
-## 3.4.3 - 2026-09-23
+## 3.5.0 - 2026-09-29
+
+### Atualização
+- Ao copiar esta versão para `plugins/projectflow`, vá em Configurar > Plugins, clique em **Atualizar** e depois em **Ativar**. A atualização cria as colunas novas (`hour_rate`, `allowed_states`, `is_paused`) e grava nome, autor e licença.
+- CSS/JS renomeados para `projectflow-3.5.0.css` / `projectflow-3.5.0.js`.
 
 ### Nome
 - Tela de plugins do GLPI: nome "Pellissari Project", autor "Kawan Costa" e licença proprietária (uso interno Pellissari e clientes autorizados). Pasta, chave `projectflow`, tabelas e URLs continuam iguais. Os dados são gravados em `glpi_plugins` uma vez, sem precisar reinstalar.
@@ -58,41 +62,6 @@
 - A busca filtra tanto os cards quanto as linhas da lista.
 - Removido o botão "Nova tarefa" duplicado da barra da execução (permanece o do cabeçalho).
 
-### Correções
-- **Minhas tarefas / Todas as visíveis**: o limite de linhas passa a ser aplicado depois dos filtros (minhas, finalizadas, permissão) e a fila não depende mais do limite de 1000 projetos do portfólio. Tarefas de projetos antigos voltam a aparecer.
-- **Cron `taskreminders`**: nova coluna `reminder_attempts`. Lembretes que falham descem na fila e são abandonados (com log) após 24 tentativas, sem bloquear lembretes novos. Usuários inativos ou excluídos não são mais notificados.
-- **Horas**: a exclusão de lançamento exige a tarefa e aceita só lançamentos de execução. As horas de reunião só saem junto com a reunião, preservando a sincronia 1:1.
-- **Busca de ativos**: filtro de entidade, lixeira e template aplicado no SQL, com paginação até preencher o limite. Sem consulta extra por item.
-- **Desvincular ativo** retorna falha quando o vínculo não existe.
-- **Saúde automática**: projeto finalizado não é mais marcado como crítico por tarefas atrasadas.
-- **Solicitante da tarefa** validado também na criação (antes só na edição).
-
-### Desempenho
-- Cache por requisição de estados e tipos de tarefa, e de nomes de usuário na normalização das tarefas.
-- A tela da tarefa carrega só o contexto do projeto (nome, link, entidade), não mais o workspace completo, e lista as tarefas do projeto uma única vez.
-- O relatório semanal é gerado sob demanda, ao abrir a aba ou clicar em **Gerar**, e não a cada abertura do projeto.
-- As estatísticas de tarefas do projeto não são mais calculadas duas vezes.
-
-### Menu
-- **Ferramentas > Projetos** passa a abrir o portfólio do Project Flow, e a entrada separada "Project Flow" no menu Ferramentas deixa de existir. As telas do plugin aparecem com o breadcrumb Ferramentas > Projetos.
-- Acessar `/front/project.php` sem parâmetros redireciona para o Project Flow. A lista nativa, com busca avançada e ações em massa, continua disponível pelo botão **Lista nativa** do portfólio.
-- A entrada **Assistência > Minhas tarefas** foi removida. As tarefas passam a ser acessadas só pelo botão **Minhas tarefas** do portfólio de projetos, e as telas de tarefa aparecem sob Ferramentas > Projetos.
-- Nova opção em Configurações, "Abrir o Project Flow em Ferramentas > Projetos", ligada por padrão. Desligada, o comportamento anterior volta.
-
-### Portfólio
-- O cabeçalho grande do portfólio (título, descrição e quatro botões) foi substituído por uma barra de ações compacta: **Minhas tarefas**, **Lista nativa** e **Novo projeto**.
-- A barra de ações ganhou fundo, espaçamento e altura uniforme. Os assets passam a levar um carimbo de conteúdo na URL (`?h=`), então o navegador pega CSS/JS novos sem Ctrl+F5, mesmo dentro da mesma versão.
-- **Novo projeto** virou um botão dividido. O menu tem "Projeto em branco", a lista de templates nativos (cada um abre a criação com o template já selecionado) e "Gerenciar templates".
-
-### Templates
-- A tela **Gerenciar templates** agora cria templates. **Novo template** tem os mesmos campos da criação de projeto (identificação, planejamento e governança, contabilização) e pode partir do zero, copiar um projeto existente (tarefas, equipe e relações) ou duplicar outro template.
-- Os modais de criação (projeto e template) passam a rolar por dentro, com cabeçalho e rodapé fixos. Antes, formulários longos ficavam cortados sem barra de rolagem.
-- As tarefas do template podem ser cadastradas no próprio formulário: nome, tipo, horas previstas, executor padrão, marco e descrição, com quantas linhas forem necessárias (Enter adiciona outra).
-- Tarefas guardadas em um template de projeto do tipo "Tarefa + chamado" não abrem chamado. Os chamados só são criados em projetos reais.
-- `ProjectService::create()` passa a atender projetos e templates (`createTemplate()` delega para ele). Ao copiar uma origem, os metadados do Project Flow dela (modos, horas previstas, portfólio...) são herdados quando o campo fica em branco.
-- Depois de criado, o template abre no workspace do Project Flow para receber tarefas, com o selo "Template" e o caminho de volta para Templates.
-- Os cards de template mostram a quantidade de tarefas e as ações **Usar**, **Editar** e o formulário nativo.
-
 ### Campos mais compactos
 - Revisão de todos os campos de texto e seleção do plugin: altura única de 34 px (30 px nos pequenos), texto de 13 px, rótulos menores e espaçamento vertical reduzido. Isso vale para portfólio, projeto, tarefa (inclusive o popup), templates, Minhas tarefas, Configurações e todos os modais.
 - Textareas com altura mínima menor e redimensionáveis. Filtros, buscas, campos de cor e campos numéricos ganharam largura máxima, e nas Configurações os campos param de ocupar a linha inteira.
@@ -143,6 +112,43 @@
 - A aba **Horas** ganhou a tabela "Horas dedicadas em cada tarefa", com execução, reuniões, total, previsto e barra de consumo (vermelha acima de 100%), além do total das tarefas no rodapé. O total do projeto continua incluindo as reuniões sem tarefa.
 - Os cards do Kanban e a lista de tarefas mostram as horas gastas e, quando houver previsão, horas gastas/previstas.
 - As horas da tarefa (execução e reuniões) passam a ser copiadas para a `effective_duration` nativa da `ProjectTask` a cada lançamento, edição ou remoção, e aparecem também nas telas nativas do GLPI.
+
+## 3.4.3 - 2026-09-23
+
+### Correções
+- **Minhas tarefas / Todas as visíveis**: o limite de linhas passa a ser aplicado depois dos filtros (minhas, finalizadas, permissão) e a fila não depende mais do limite de 1000 projetos do portfólio. Tarefas de projetos antigos voltam a aparecer.
+- **Cron `taskreminders`**: nova coluna `reminder_attempts`. Lembretes que falham descem na fila e são abandonados (com log) após 24 tentativas, sem bloquear lembretes novos. Usuários inativos ou excluídos não são mais notificados.
+- **Horas**: a exclusão de lançamento exige a tarefa e aceita só lançamentos de execução. As horas de reunião só saem junto com a reunião, preservando a sincronia 1:1.
+- **Busca de ativos**: filtro de entidade, lixeira e template aplicado no SQL, com paginação até preencher o limite. Sem consulta extra por item.
+- **Desvincular ativo** retorna falha quando o vínculo não existe.
+- **Saúde automática**: projeto finalizado não é mais marcado como crítico por tarefas atrasadas.
+- **Solicitante da tarefa** validado também na criação (antes só na edição).
+
+### Desempenho
+- Cache por requisição de estados e tipos de tarefa, e de nomes de usuário na normalização das tarefas.
+- A tela da tarefa carrega só o contexto do projeto (nome, link, entidade), não mais o workspace completo, e lista as tarefas do projeto uma única vez.
+- O relatório semanal é gerado sob demanda, ao abrir a aba ou clicar em **Gerar**, e não a cada abertura do projeto.
+- As estatísticas de tarefas do projeto não são mais calculadas duas vezes.
+
+### Menu
+- **Ferramentas > Projetos** passa a abrir o portfólio do Project Flow, e a entrada separada "Project Flow" no menu Ferramentas deixa de existir. As telas do plugin aparecem com o breadcrumb Ferramentas > Projetos.
+- Acessar `/front/project.php` sem parâmetros redireciona para o Project Flow. A lista nativa, com busca avançada e ações em massa, continua disponível pelo botão **Lista nativa** do portfólio.
+- A entrada **Assistência > Minhas tarefas** foi removida. As tarefas passam a ser acessadas só pelo botão **Minhas tarefas** do portfólio de projetos, e as telas de tarefa aparecem sob Ferramentas > Projetos.
+- Nova opção em Configurações, "Abrir o Project Flow em Ferramentas > Projetos", ligada por padrão. Desligada, o comportamento anterior volta.
+
+### Portfólio
+- O cabeçalho grande do portfólio (título, descrição e quatro botões) foi substituído por uma barra de ações compacta: **Minhas tarefas**, **Lista nativa** e **Novo projeto**.
+- A barra de ações ganhou fundo, espaçamento e altura uniforme. Os assets passam a levar um carimbo de conteúdo na URL (`?h=`), então o navegador pega CSS/JS novos sem Ctrl+F5, mesmo dentro da mesma versão.
+- **Novo projeto** virou um botão dividido. O menu tem "Projeto em branco", a lista de templates nativos (cada um abre a criação com o template já selecionado) e "Gerenciar templates".
+
+### Templates
+- A tela **Gerenciar templates** agora cria templates. **Novo template** tem os mesmos campos da criação de projeto (identificação, planejamento e governança, contabilização) e pode partir do zero, copiar um projeto existente (tarefas, equipe e relações) ou duplicar outro template.
+- Os modais de criação (projeto e template) passam a rolar por dentro, com cabeçalho e rodapé fixos. Antes, formulários longos ficavam cortados sem barra de rolagem.
+- As tarefas do template podem ser cadastradas no próprio formulário: nome, tipo, horas previstas, executor padrão, marco e descrição, com quantas linhas forem necessárias (Enter adiciona outra).
+- Tarefas guardadas em um template de projeto do tipo "Tarefa + chamado" não abrem chamado. Os chamados só são criados em projetos reais.
+- `ProjectService::create()` passa a atender projetos e templates (`createTemplate()` delega para ele). Ao copiar uma origem, os metadados do Project Flow dela (modos, horas previstas, portfólio...) são herdados quando o campo fica em branco.
+- Depois de criado, o template abre no workspace do Project Flow para receber tarefas, com o selo "Template" e o caminho de volta para Templates.
+- Os cards de template mostram a quantidade de tarefas e as ações **Usar**, **Editar** e o formulário nativo.
 
 ### Configurações
 - **Estados de projetos e tarefas:** criar, editar e excluir estados (nome, cor, finalizado, % no Kanban e comentário). Projetos e tarefas compartilham a lista de estados, como no GLPI. Um estado só pode ser excluído quando nenhum projeto ou tarefa o usa, quando não é o estado inicial configurado e quando não é destino de uma regra.
