@@ -1,11 +1,11 @@
-# Operação, atualização e homologação - Project Flow 3.5.0
+# Operação, atualização e homologação - Project Flow 3.5.1
 
 ## Atualização a partir de 0.x / 1.x / 2.x
 
 1. Faça backup do banco.
 2. Faça backup de `plugins/projectflow`.
 3. Desative o Project Flow, mas **não desinstale**.
-4. Substitua integralmente a pasta antiga pela versão 3.5.0 (o pacote já traz a pasta raiz `projectflow/`).
+4. Substitua integralmente a pasta antiga pela versão 3.5.1 (o pacote já traz a pasta raiz `projectflow/`).
 5. Em **Configurar -> Plugins**, execute a atualização.
 6. Ative o plugin.
 7. Limpe cache do GLPI/navegador se necessário.

@@ -190,6 +190,7 @@ function plugin_projectflow_install(): bool
     }
 
     \GlpiPlugin\Projectflow\Service\ProgressRuleService::ensureTable();
+    \GlpiPlugin\Projectflow\Service\TeamRoleService::ensureTables();
 
     $states = [];
     if ($DB->tableExists('glpi_projectstates')) {
@@ -286,6 +287,8 @@ function plugin_projectflow_uninstall(): bool
     CronTask::unregister('projectflow');
     foreach ([
         'glpi_plugin_projectflow_progressrules',
+        'glpi_plugin_projectflow_teamroles',
+        'glpi_plugin_projectflow_roles',
         'glpi_plugin_projectflow_weeklyreports',
         'glpi_plugin_projectflow_taskassets',
         'glpi_plugin_projectflow_meetings',
@@ -336,6 +339,7 @@ function plugin_projectflow_item_purge(CommonDBTM $item): void
     }
 
     if ($item instanceof Project) {
+        (new \GlpiPlugin\Projectflow\Service\TeamRoleService())->forgetProject($id);
         $tables = [
             'glpi_plugin_projectflow_projectmeta' => ['projects_id' => $id],
             'glpi_plugin_projectflow_favorites' => ['projects_id' => $id],

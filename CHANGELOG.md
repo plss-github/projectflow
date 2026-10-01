@@ -1,5 +1,38 @@
 # Changelog
 
+## 3.5.1 - 2026-10-01
+
+### Revisão visual
+- Portfólio: o filtro de portfólio não some mais em telas abaixo de 1400px; rótulos dos indicadores (ex.: "Minhas tarefas") quebram linha em vez de serem cortados.
+- Kanban de execução rola dentro do painel em vez de alargar a página inteira.
+- Resumo: bloco Governança ganhou estilo (estava sem formatação).
+- Modais do plugin (Funções, Contrato, Novo template etc.): o cabeçalho não corta mais o sobretítulo; modais largos usam a largura da tela em tablets e notebooks pequenos (campos de Configurações do projeto e Nova tarefa deixam de ficar espremidos).
+- Popup da tarefa: barra de ações (Responder/Salvar) não fica mais cortada no rodapé; o ícone de erro do campo de data não cobre mais o botão do calendário; nas abas roláveis (projeto, popup, passos do template) a aba ativa é trazida para a área visível.
+- Reuniões: mês exibido em português (set, out...) em vez de inglês.
+- Relatório semanal: botões da barra quebram linha em telas estreitas em vez de se sobreporem.
+- Configurações: chaves "Finalizado"/"Pausa o projeto" não se sobrepõem; o sufixo % das regras e o botão "Testar" da IA não vazam mais do campo.
+- Cronograma: o período nos indicadores quebra linha em vez de ser cortado.
+
+### Cronograma
+- Aba Cronograma redesenhada: indicadores com ícones (período, tarefas no cronograma, concluídas, atrasadas, próxima entrega); Gantt com escala automática (visão diária com dia da semana e fins de semana sombreados em projetos curtos, visão semanal nos longos), cabeçalho de meses, janela alinhada às semanas e estendida até hoje, coluna e linha "Hoje", tarefas em árvore (pai em negrito, filhas recuadas), barras com o realizado preenchido e rótulo de % e datas, atraso como faixa hachurada até hoje com selo "Nd atraso", marcos em losango e duração por tarefa; rolagem horizontal com a coluna de tarefas fixa. Abaixo, agenda por semana em lista (data, estado, %) e o painel "Sem planejamento" ao lado.
+
+### Funções da equipe
+- As funções agora são de cada projeto (e de cada template): cada um tem o seu próprio cadastro. Ao criar um projeto a partir de um template, as funções do template são copiadas e cada membro mantém a sua. Funções de builds anteriores (globais) são copiadas automaticamente para os projetos que as usavam.
+- Criação de template ganhou a aba "Funções" para já definir as funções da equipe (nome e cor). No template já criado, elas são gerenciadas na aba Equipe.
+- Aba Equipe redesenhada: cabeçalho com totais (membros, funções) e "Gerenciar funções"; formulário "Adicionar à equipe" com rótulos; membros agrupados por função (cor da função no grupo, no card e no avatar com iniciais); cada card mostra tipo, tarefas que a pessoa executa no projeto, horas lançadas e o selo "Responsável" do projeto.
+- Aba Equipe: botão "Funções" abre o cadastro de funções (nome, cor, descrição; editar e excluir) e cada membro ganha a sua função no projeto, escolhida no próprio card ou já ao adicionar o membro. Resumo da equipe por função e faixa de cor no card.
+- Projetos criados de um template herdam a função de cada membro. Novas tabelas `glpi_plugin_projectflow_roles` e `glpi_plugin_projectflow_teamroles` (criadas automaticamente).
+
+### Subtarefas em árvore
+- Na lista da Execução (e na escolha da tarefa pai), as subtarefas aparecem logo abaixo da tarefa pai, recuadas em escadinha por nível, com o ícone ↳; tarefas que têm filhas ganham um selo.
+
+### Tarefa sempre em popup
+- A tela cheia da tarefa deixou de existir: qualquer link para uma tarefa (Kanban, lista, resumo, cronograma, horas, Minhas tarefas) abre o popup. Acessar `front/task.php?id=X` direto (favorito, link antigo, notificação) leva ao projeto da tarefa com o popup aberto. Depois de criar uma tarefa, o projeto recarrega com ela aberta no popup. Removido o botão "Tela cheia" do popup.
+
+### Cabeçalho do projeto
+- Removido o botão "Horas e custos" do topo do projeto (a aba continua).
+- "Nova tarefa" virou menu: Tarefa pai ou Tarefa filha (subtarefa). A filha usa o mesmo formulário com o campo obrigatório "Tarefa pai", listando só tarefas do próprio projeto (o servidor também valida).
+
 ## 3.5.0 - 2026-09-29
 
 ### Atualização

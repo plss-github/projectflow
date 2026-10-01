@@ -8,7 +8,7 @@ if (!defined('GLPI_ROOT')) {
     die('Direct access not allowed');
 }
 
-define('PLUGIN_PROJECTFLOW_VERSION', '3.5.0');
+define('PLUGIN_PROJECTFLOW_VERSION', '3.5.1');
 define('PLUGIN_PROJECTFLOW_GLPI_MIN', '11.0.0');
 define('PLUGIN_PROJECTFLOW_GLPI_MAX', '11.0.99');
 

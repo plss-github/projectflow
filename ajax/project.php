@@ -71,7 +71,28 @@ try {
             $type = (string)($input['itemtype'] ?? '');
             $itemId = (int)($input['items_id'] ?? 0);
             if (!$service->addTeamMember($id, $type, $itemId)) projectflow_json_response(false, ['message' => 'Não foi possível adicionar o membro à equipe.'], 400);
+            $roleId = (int)($input['roles_id'] ?? 0);
+            if ($roleId > 0) {
+                $rel = (new ProjectTeam())->find(['projects_id' => $id, 'itemtype' => $type, 'items_id' => $itemId], [], 1);
+                if ($rel) (new \GlpiPlugin\Projectflow\Service\TeamRoleService())->assign($id, (int) array_key_first($rel), $roleId);
+            }
             projectflow_json_response(true, ['message' => 'Membro adicionado à equipe.']);
+
+        case 'team_role_set':
+            $id = (int)($input['project_id'] ?? 0);
+            if (!(new \GlpiPlugin\Projectflow\Service\TeamRoleService())->assign($id, (int)($input['relation_id'] ?? 0), (int)($input['roles_id'] ?? 0))) projectflow_json_response(false, ['message' => 'Não foi possível definir a função.'], 400);
+            projectflow_json_response(true, ['message' => 'Função atualizada.']);
+
+        case 'role_save':
+            $id = (int)($input['project_id'] ?? 0);
+            $roleId = (new \GlpiPlugin\Projectflow\Service\TeamRoleService())->saveRole($id, $input);
+            if (!$roleId) projectflow_json_response(false, ['message' => 'Não foi possível salvar a função (nome vazio ou já existente).'], 400);
+            projectflow_json_response(true, ['id' => $roleId, 'roles' => (new \GlpiPlugin\Projectflow\Service\TeamRoleService())->listRoles($id), 'message' => 'Função salva.']);
+
+        case 'role_delete':
+            $id = (int)($input['project_id'] ?? 0);
+            if (!(new \GlpiPlugin\Projectflow\Service\TeamRoleService())->deleteRole($id, (int)($input['role_id'] ?? 0))) projectflow_json_response(false, ['message' => 'Não foi possível excluir a função.'], 400);
+            projectflow_json_response(true, ['message' => 'Função excluída.']);
 
         case 'team_remove':
             $id = (int)($input['project_id'] ?? 0);

@@ -27,8 +27,12 @@ class ProjectController
         $upcomingTasks=[];foreach($tasks as $task){if(empty($task['state']['is_finished'])){$upcomingTasks[]=$task;if(count($upcomingTasks)>=5)break;}}
         // The weekly report is generated on demand (tab opened / "Gerar"), not on every page load.
         $reports=new WeeklyReportService();$weeks=$reports->weeksForProject($project);$weekly=['text'=>'','week_start'=>$weeks[0]['start']??date('Y-m-d')];
+        // Tasks in tree order (parent, then its subtasks right below, indented by depth).
+        $byParent=[];$ids=[];foreach($tasks as $t){$ids[(int)$t['id']]=true;}
+        foreach($tasks as $t){$pid=(int)($t['parent_id']??0);if($pid>0&&!isset($ids[$pid]))$pid=0;$byParent[$pid][]=$t;}
+        $tree=[];$walk=function(int $pid,int $depth)use(&$walk,&$tree,$byParent){foreach($byParent[$pid]??[] as $t){$t['depth']=min($depth,6);$t['has_children']=!empty($byParent[(int)$t['id']]);$tree[]=$t;if($depth<20)$walk((int)$t['id'],$depth+1);}};$walk(0,0);
         return [
-            'project'=>$project,'tasks'=>$tasks,'upcoming_tasks'=>$upcomingTasks,'board'=>$tasksService->getBoard($tasks,Config::bool('show_finished_states',true)),'timeline'=>$tasksService->buildTimeline($tasks,$project),'sprints'=>$this->buildSprints($tasks),
+            'project'=>$project,'tasks'=>$tasks,'tasks_tree'=>$tree,'team_roles'=>($teamRoles=(new \GlpiPlugin\Projectflow\Service\TeamRoleService())->listRoles($projectId)),'team_groups'=>self::teamGroups($project['team']??[],$teamRoles,!empty($project['can_update'])),'upcoming_tasks'=>$upcomingTasks,'board'=>$tasksService->getBoard($tasks,Config::bool('show_finished_states',true)),'timeline'=>$tasksService->buildTimeline($tasks,$project),'gantt'=>$tasksService->buildGantt($tree,$project),'sprints'=>$this->buildSprints($tasks),
             'states'=>$states,'task_types'=>$refs->getTaskTypes(),'users'=>$refs->getUsers(),'groups'=>$refs->getGroups(),'suppliers'=>$refs->getSuppliers(),'contacts'=>$refs->getContacts(),'project_types'=>$refs->getProjectTypes(),'priorities'=>$refs->getPriorities(),'budgets'=>$refs->getBudgets(),'ticket_categories'=>$refs->getTicketCategories((int)$project['entity_id']),'contracts'=>$refs->getContracts((int)$project['entity_id']),'asset_types'=>(new AssetService())->getTypes(),
             'task_stats'=>['total'=>count($tasks),'completed'=>$completed,'overdue'=>$overdue,'milestones'=>$milestones,'attention'=>$attention],
             'weeks'=>$weeks,'ai_enabled'=>\GlpiPlugin\Projectflow\Service\AiReportService::isEnabled(),'weekly_report'=>$weekly,'saved_reports'=>$reports->getSaved($projectId),
@@ -37,11 +41,24 @@ class ProjectController
         ];
     }
 
+    /** Team members grouped by function (functions in use, then "Sem função"). */
+    private static function teamGroups(array $team,array $roles,bool $canUpdate): array
+    {
+        $groups=[];
+        foreach($roles as $r){$members=array_values(array_filter($team,static fn(array $m):bool=>!empty($m['role'])&&(int)$m['role']['id']===(int)$r['id']));if($members)$groups[]=$r+['members'=>$members,'count'=>count($members)];}
+        $none=array_values(array_filter($team,static fn(array $m):bool=>empty($m['role'])));
+        if($none)$groups[]=['id'=>0,'name'=>'Sem função','color'=>'#94a3b8','comment'=>$canUpdate?'Escolha a função no card de cada pessoa.':'','members'=>$none,'count'=>count($none)];
+        return $groups;
+    }
+
     private function buildSprints(array $tasks): array
     {
         $groups=[];
         foreach($tasks as $task){$date=$task['plan_start_date']?:$task['plan_end_date']; if(!$date){$key='backlog';$label='Sem planejamento';}else{$d=new \DateTimeImmutable($date);$m=$d->modify('monday this week');$e=$m->modify('+6 days');$key=$m->format('Y-m-d');$label=$m->format('d/m').' - '.$e->format('d/m/Y');}
             if(!isset($groups[$key]))$groups[$key]=['key'=>$key,'label'=>$label,'tasks'=>[],'completed'=>0];$groups[$key]['tasks'][]=$task;if($task['percent_done']>=100||!empty($task['state']['is_finished']))$groups[$key]['completed']++;}
-        uksort($groups,static function($a,$b){if($a==='backlog')return 1;if($b==='backlog')return -1;return strcmp($a,$b);});return array_values($groups);
+        uksort($groups,static function($a,$b){if($a==='backlog')return 1;if($b==='backlog')return -1;return strcmp($a,$b);});
+        $thisWeek=(new \DateTimeImmutable('monday this week'))->format('Y-m-d');
+        foreach($groups as $k=>&$g){$n=count($g['tasks']);$g['percent']=$n?(int)round($g['completed']/$n*100):0;$g['is_current']=$k===$thisWeek;$g['is_past']=$k!=='backlog'&&$k<$thisWeek;$g['overdue']=count(array_filter($g['tasks'],static fn($t)=>!empty($t['is_overdue'])));}unset($g);
+        return array_values($groups);
     }
 }
