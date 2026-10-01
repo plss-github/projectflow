@@ -19,8 +19,7 @@
         <p>{{ project.objective ?: (project.content ?: 'Projeto sem objetivo executivo cadastrado.') }}</p>
       </div>
       <div class="pf-hero-actions pf-hero-actions-compact">
-        {% if project.can_update %}<button type="button" class="btn btn-primary pf-project-shortcut" data-bs-toggle="modal" data-bs-target="#pf-task-create-modal"><i class="ti ti-plus"></i> Nova tarefa</button>{% endif %}
-        <button type="button" class="btn btn-outline-secondary pf-project-shortcut" data-pf-goto="hours" title="{{ project.has_money and project.can_view_money ? 'Abrir horas e financeiro' : 'Abrir controle de horas' }}"><i class="ti ti-{{ project.has_money and project.can_view_money ? 'wallet' : 'clock-hour-4' }}"></i> {{ project.cost_mode == 'both' and project.can_view_money ? 'Horas e custos' : (project.has_money and project.can_view_money ? 'Financeiro' : 'Horas') }}</button>
+        {% if project.can_update %}<div class="dropdown pf-new-task-menu"><button type="button" class="btn btn-primary pf-project-shortcut dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="ti ti-plus"></i> Nova tarefa</button><div class="dropdown-menu dropdown-menu-end"><button type="button" class="dropdown-item" data-pf-new-task="parent" data-bs-toggle="modal" data-bs-target="#pf-task-create-modal"><i class="ti ti-list-check"></i> Tarefa pai</button><button type="button" class="dropdown-item" data-pf-new-task="child" data-bs-toggle="modal" data-bs-target="#pf-task-create-modal" {{ tasks ? '' : 'disabled title="Crie uma tarefa pai primeiro"' }}><i class="ti ti-subtask"></i> Tarefa filha (subtarefa)</button></div></div>{% endif %}
         {% if project.contracts %}<button type="button" class="btn btn-outline-secondary pf-project-shortcut pf-contract-open is-linked" data-bs-toggle="modal" data-bs-target="#pf-contract-viewer" title="Abrir o contrato vinculado"><i class="ti ti-file-certificate"></i> Contrato <span class="pf-contract-dot" aria-hidden="true"></span></button>{% elseif project.can_update %}<button type="button" class="btn btn-outline-secondary pf-project-shortcut" data-bs-toggle="modal" data-bs-target="#pf-contract-modal" title="Vincular um contrato ao projeto"><i class="ti ti-file-plus"></i> Vincular contrato</button>{% else %}<button type="button" class="btn btn-outline-secondary pf-project-shortcut" disabled title="Nenhum contrato vinculado"><i class="ti ti-file-certificate"></i> Sem contrato</button>{% endif %}
         {% if project.can_update %}<button type="button" class="btn btn-outline-secondary pf-icon-btn" data-bs-toggle="modal" data-bs-target="#pf-project-edit-modal" title="Configurações do projeto"><i class="ti ti-settings"></i></button>{% endif %}
         <button type="button" class="btn btn-outline-secondary pf-icon-btn pf-favorite {{ project.is_favorite ? 'is-active' : '' }}" data-project-id="{{ project.id }}" title="Favoritar projeto"><i class="ti ti-star{{ project.is_favorite ? '-filled' : '' }}"></i></button>
@@ -92,12 +91,102 @@
         </section>
         {% else %}<div class="pf-empty-state"><i class="ti ti-columns-off"></i><strong>Nenhum estado configurado</strong><p>Cadastre estados no GLPI e defina o estado inicial nas configurações do Project Flow.</p></div>{% endfor %}
       </div>
-      <section class="pf-panel mt-3 d-none" data-pf-view-pane="list"><div class="table-responsive"><table class="table pf-table"><thead><tr><th>Tarefa</th><th>Estado</th><th>Prioridade</th><th>Progresso</th><th>Prazo</th><th class="text-end">Horas</th><th></th></tr></thead><tbody>{% for task in tasks %}<tr class="pf-task-row" data-search="{{ (task.name ~ ' ' ~ task.state.name ~ ' ' ~ task.priority_name ~ ' ' ~ task.type_name)|lower }}"><td><a href="{{ task.task_url }}"><strong>{{ task.name }}</strong></a>{% if task.attention %}<span class="pf-mini-attention"><i class="ti ti-alert-triangle"></i></span>{% endif %}</td><td>{{ task.state.name }}</td><td>{{ task.priority_name }}</td><td>{{ task.percent_done }}%</td><td class="{{ task.is_overdue ? 'pf-text-danger' : '' }}">{{ task.plan_end_date ? task.plan_end_date|date('d/m/Y') : '—' }}</td><td class="text-end text-nowrap" title="Execução {{ task.hours.execution_label }} · Reuniões {{ task.hours.meeting_label }}">{{ task.hours.total_label }}{% if task.hours.planned_label %} <small class="text-muted">/ {{ task.hours.planned_label }}</small>{% endif %}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ task.task_url }}">Abrir</a></td></tr>{% else %}<tr><td colspan="7" class="text-muted">Nenhuma tarefa ainda.{% if project.can_update %} <a href="#" data-bs-toggle="modal" data-bs-target="#pf-task-create-modal">Criar a primeira tarefa</a>{% endif %}</td></tr>{% endfor %}</tbody></table></div></section>
+      <section class="pf-panel mt-3 d-none" data-pf-view-pane="list"><div class="table-responsive"><table class="table pf-table"><thead><tr><th>Tarefa</th><th>Estado</th><th>Prioridade</th><th>Progresso</th><th>Prazo</th><th class="text-end">Horas</th><th></th></tr></thead><tbody>{% for task in tasks_tree %}<tr class="pf-task-row pf-tree-depth-{{ task.depth }}{{ task.has_children ? ' has-children' : '' }}" data-search="{{ (task.name ~ ' ' ~ task.state.name ~ ' ' ~ task.priority_name ~ ' ' ~ task.type_name)|lower }}"><td><span class="pf-tree-cell" style="--pf-depth:{{ task.depth }}">{% if task.depth %}<i class="ti ti-corner-down-right pf-tree-elbow"></i>{% endif %}<a href="{{ task.task_url }}"><strong>{{ task.name }}</strong></a>{% if task.has_children %}<span class="pf-tree-badge" title="Tem subtarefas"><i class="ti ti-subtask"></i></span>{% endif %}</span>{% if task.attention %}<span class="pf-mini-attention"><i class="ti ti-alert-triangle"></i></span>{% endif %}</td><td>{{ task.state.name }}</td><td>{{ task.priority_name }}</td><td>{{ task.percent_done }}%</td><td class="{{ task.is_overdue ? 'pf-text-danger' : '' }}">{{ task.plan_end_date ? task.plan_end_date|date('d/m/Y') : '—' }}</td><td class="text-end text-nowrap" title="Execução {{ task.hours.execution_label }} · Reuniões {{ task.hours.meeting_label }}">{{ task.hours.total_label }}{% if task.hours.planned_label %} <small class="text-muted">/ {{ task.hours.planned_label }}</small>{% endif %}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ task.task_url }}">Abrir</a></td></tr>{% else %}<tr><td colspan="7" class="text-muted">Nenhuma tarefa ainda.{% if project.can_update %} <a href="#" data-bs-toggle="modal" data-bs-target="#pf-task-create-modal">Criar a primeira tarefa</a>{% endif %}</td></tr>{% endfor %}</tbody></table></div></section>
     </section>
 
     <section class="pf-tab-pane" data-pf-pane="schedule">
-      <div class="pf-section-heading"><div><div class="pf-eyebrow">SPRINTS SEMANAIS</div><h2>Cronograma</h2><p>Organização semanal a partir das datas planejadas das tarefas.</p></div></div>
-      <div class="pf-sprint-list">{% for sprint in sprints %}<section class="pf-panel pf-sprint-card"><header><div><strong>{{ sprint.label }}</strong><span>{{ sprint.tasks|length }} tarefa(s)</span></div><b>{{ sprint.completed }}/{{ sprint.tasks|length }}</b></header><div class="pf-sprint-tasks">{% for task in sprint.tasks %}<a href="{{ task.task_url }}" class="{{ task.is_overdue ? 'is-overdue' : '' }}"><span class="pf-column-dot" style="--pf-state-color:{{ task.state.color }}"></span><div><strong>{{ task.name }}</strong><small>{{ task.state.name }} · {{ task.percent_done }}%</small></div><time>{{ task.plan_end_date ? task.plan_end_date|date('d/m') : '—' }}</time></a>{% endfor %}</div></section>{% else %}<div class="pf-empty-state">Sem tarefas planejadas.</div>{% endfor %}</div>
+      {% set sc_backlog = sprints|filter(s => s.key == 'backlog')|first %}{% set sc_overdue = tasks|filter(t => t.is_overdue)|length %}
+      {% set sc_done = tasks|filter(t => t.state.is_finished or t.percent_done >= 100)|length %}
+      {% set sc_next = tasks|filter(t => not t.state.is_finished and t.plan_end_date)|sort((a, b) => a.plan_end_ts <=> b.plan_end_ts)|first %}
+      <div class="pf-sc-top">
+        <div class="pf-sc-title"><div class="pf-eyebrow">PLANEJAMENTO</div><h2>Cronograma</h2></div>
+        <div class="pf-sc-stats">
+          <div class="pf-sc-stat"><i class="ti ti-calendar-event"></i><div><span>Período</span><strong>{{ timeline.has_dates ? timeline.start_label|slice(0,5) ~ ' → ' ~ timeline.end_label : 'Sem datas' }}</strong></div></div>
+          <div class="pf-sc-stat"><i class="ti ti-chart-bar"></i><div><span>No cronograma</span><strong>{{ gantt.rows|length }} <small>de {{ tasks|length }} tarefas</small></strong></div></div>
+          <div class="pf-sc-stat"><i class="ti ti-circle-check"></i><div><span>Concluídas</span><strong>{{ sc_done }}</strong></div></div>
+          <div class="pf-sc-stat {{ sc_overdue ? 'is-danger' : '' }}"><i class="ti ti-alarm"></i><div><span>Atrasadas</span><strong>{{ sc_overdue }}</strong></div></div>
+          <div class="pf-sc-stat is-wide"><i class="ti ti-flag"></i><div><span>Próxima entrega</span><strong title="{{ sc_next ? sc_next.name : '' }}">{% if sc_next %}<b>{{ sc_next.plan_end_date|date('d/m') }}</b> {{ sc_next.name }}{% else %}—{% endif %}</strong></div></div>
+        </div>
+      </div>
+
+      {% if gantt.has_dates %}
+      <section class="pf-gx" style="--pf-gx-cols:{{ gantt.cols }};--pf-gx-unit:{{ gantt.mode == 'day' ? 38 : 84 }}px">
+        <div class="pf-gx-toolbar">
+          <div class="pf-gx-legend">
+            <span><i class="pf-gx-key is-bar"></i>Planejado</span>
+            <span><i class="pf-gx-key is-progress"></i>Realizado</span>
+            <span><i class="pf-gx-key is-late"></i>Atraso</span>
+            <span><i class="pf-gx-key is-milestone"></i>Marco</span>
+            {% if gantt.today_pct is not null %}<span><i class="pf-gx-key is-today"></i>Hoje · {{ gantt.today_label }}</span>{% endif %}
+          </div>
+          <span class="pf-gx-mode"><i class="ti ti-zoom-in"></i>{{ gantt.mode == 'day' ? 'Visão diária' : 'Visão semanal' }}</span>
+        </div>
+        <div class="pf-gx-scroll">
+          <div class="pf-gx-grid">
+            <div class="pf-gx-row pf-gx-months"><div class="pf-gx-label">Tarefa</div><div class="pf-gx-track">{% for m in gantt.months %}<span style="left:{{ m.left }}%;width:{{ m.width }}%" title="{{ m.label }}">{{ m.short ? '' : m.label }}</span>{% endfor %}</div></div>
+            <div class="pf-gx-row pf-gx-cols"><div class="pf-gx-label"><span>{{ gantt.rows|length }} tarefa(s)</span><span>Duração</span></div><div class="pf-gx-track">{% for c in gantt.columns %}<span class="{{ c.is_weekend ? 'is-weekend' : '' }} {{ c.is_today ? 'is-today' : '' }}"><b>{{ c.label }}</b><small>{{ c.sub }}</small></span>{% endfor %}</div></div>
+            <div class="pf-gx-body">
+              <div class="pf-gx-bg">{% for c in gantt.columns %}<i class="{{ c.is_weekend ? 'is-weekend' : '' }} {{ c.is_week_start ? 'is-week-start' : '' }} {{ c.is_today ? 'is-today' : '' }}"></i>{% endfor %}</div>
+              {% for r in gantt.rows %}
+              <a class="pf-gx-row pf-gx-task {{ r.has_children ? 'is-parent' : '' }} {{ r.g_finished ? 'is-done' : '' }} {{ r.is_overdue ? 'is-overdue' : '' }}" href="{{ r.task_url }}" style="--pf-state-color:{{ r.state.color ?: '#4c7cf3' }}" title="{{ r.name }} · {{ r.g_range }} · {{ r.percent_done }}%">
+                <div class="pf-gx-label" style="--pf-depth:{{ r.depth }}">
+                  {% if r.depth > 0 %}<i class="ti ti-corner-down-right pf-gx-elbow"></i>{% endif %}
+                  <span class="pf-column-dot" style="--pf-state-color:{{ r.state.color }}"></span>
+                  <span class="pf-gx-name">{{ r.name }}</span>
+                  {% if r.is_overdue and r.g_late_days > 0 %}<em class="pf-gx-late-tag">{{ r.g_late_days }}d atraso</em>{% endif %}
+                  <small>{{ r.is_milestone ? 'marco' : r.g_days ~ 'd' }}</small>
+                </div>
+                <div class="pf-gx-track">
+                  {% if r.g_late_left is not null %}<span class="pf-gx-late" style="left:{{ r.g_late_left }}%;width:{{ r.g_late_width }}%"></span>{% endif %}
+                  {% if r.is_milestone %}
+                    <span class="pf-gx-milestone" style="left:{{ r.g_left }}%"></span>
+                    <span class="pf-gx-cap {{ r.g_label_left ? 'is-left' : '' }}" style="{{ r.g_label_left ? 'right:calc(' ~ (100 - r.g_left) ~ '% + 16px)' : 'left:calc(' ~ r.g_left ~ '% + 16px)' }}">{{ r.g_range }}</span>
+                  {% else %}
+                    <span class="pf-gx-bar" style="left:{{ r.g_left }}%;width:{{ r.g_width }}%"><i style="width:{{ r.percent_done }}%"></i>{% if r.g_finished %}<b class="ti ti-check"></b>{% endif %}</span>
+                    {% set cap_at = r.g_late_left is not null ? r.g_late_left + r.g_late_width : r.g_left + r.g_width %}
+                    <span class="pf-gx-cap {{ r.g_label_left ? 'is-left' : '' }}" style="{{ r.g_label_left ? 'right:calc(' ~ (100 - r.g_left) ~ '% + 8px)' : 'left:calc(' ~ cap_at ~ '% + 8px)' }}"><b>{{ r.percent_done }}%</b> {{ r.g_range }}</span>
+                  {% endif %}
+                </div>
+              </a>
+              {% endfor %}
+              {% if gantt.today_pct is not null %}<div class="pf-gx-today" style="--pf-today:{{ gantt.today_pct }}"></div>{% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
+      {% else %}
+      <section class="pf-gx pf-gx-empty"><i class="ti ti-calendar-off"></i><strong>Nenhuma tarefa com início e prazo</strong><span>Defina as datas planejadas nas tarefas para montar a linha do tempo.</span></section>
+      {% endif %}
+
+      <div class="pf-sc-lower {{ sc_backlog ? '' : 'is-single' }}">
+        <section class="pf-sc-agenda">
+          <header class="pf-sc-sec-head"><h3><i class="ti ti-list-details"></i>Agenda por semana</h3><span>Pela semana de início (ou do prazo)</span></header>
+          {% for sprint in sprints|filter(s => s.key != 'backlog') %}
+            <div class="pf-sc-wk {{ sprint.is_current ? 'is-current' : '' }} {{ sprint.is_past ? 'is-past' : '' }}">
+              <div class="pf-sc-wk-head">
+                <strong>{{ sprint.label }}</strong>{% if sprint.is_current %}<span class="pf-sc-now">Esta semana</span>{% elseif sprint.is_past %}<span class="pf-sc-past">Passada</span>{% endif %}
+                <div class="pf-sc-wk-meter"><span style="width:{{ sprint.percent }}%"></span></div><b>{{ sprint.completed }}/{{ sprint.tasks|length }}</b>
+              </div>
+              {% for task in sprint.tasks %}
+                <a href="{{ task.task_url }}" class="pf-sc-wk-task {{ task.is_overdue ? 'is-overdue' : '' }} {{ task.state.is_finished ? 'is-done' : '' }}">
+                  <time>{{ task.plan_end_date ? task.plan_end_date|date('d/m') : '—' }}</time>
+                  <span class="pf-sc-task-name">{% if task.is_milestone %}<i class="ti ti-flag-3"></i>{% endif %}{{ task.name }}</span>
+                  <span class="pf-sc-state" style="--pf-state-color:{{ task.state.color }}">{{ task.state.name }}</span>
+                  <span class="pf-sc-pct">{{ task.percent_done }}%</span>
+                </a>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="pf-empty-inline">Nenhuma tarefa com data planejada.</div>
+          {% endfor %}
+        </section>
+        {% if sc_backlog %}
+        <aside class="pf-sc-unplanned">
+          <header class="pf-sc-sec-head"><h3><i class="ti ti-calendar-question"></i>Sem planejamento <em>{{ sc_backlog.tasks|length }}</em></h3><span>Defina início e prazo para entrarem no cronograma.</span></header>
+          {% for task in sc_backlog.tasks %}<a href="{{ task.task_url }}" class="{{ task.state.is_finished ? 'is-done' : '' }}"><span class="pf-column-dot" style="--pf-state-color:{{ task.state.color }}"></span><span class="pf-sc-task-name">{{ task.name }}</span><small>{{ task.state.name }}</small><i class="ti ti-chevron-right"></i></a>{% endfor %}
+        </aside>
+        {% endif %}
+      </div>
     </section>
 
     <section class="pf-tab-pane" data-pf-pane="hours">
@@ -147,7 +236,7 @@
 
     <section class="pf-tab-pane" data-pf-pane="meetings">
       <div class="pf-section-heading"><div><div class="pf-eyebrow">ALINHAMENTOS</div><h2>Reuniões</h2><p>Reunião não é tarefa. Registre aqui tempo, decisões e pendências.</p></div>{% if project.can_update %}<button class="btn btn-primary pf-meeting-new" data-bs-toggle="modal" data-bs-target="#pf-meeting-modal"><i class="ti ti-plus"></i> Nova reunião</button>{% endif %}</div>
-      <div class="pf-meeting-list" id="pf-meeting-list">{% for meeting in project.meetings %}<article class="pf-panel pf-meeting-card"><div class="pf-meeting-date"><strong>{{ meeting.start_at|date('d') }}</strong><span>{{ meeting.start_at|date('M') }}</span></div><div class="pf-meeting-body"><header><div><h3>{{ meeting.title }}</h3><span>{{ meeting.start_at|date('d/m/Y H:i') }} · {{ meeting.duration_label }} · {{ meeting.user_name }}</span></div>{% if project.can_update %}<div class="pf-meeting-actions"><button class="btn btn-sm btn-ghost-secondary pf-meeting-edit" type="button" data-bs-toggle="modal" data-bs-target="#pf-meeting-modal" data-id="{{ meeting.id }}" data-title="{{ meeting.title|e('html_attr') }}" data-start="{{ meeting.start_at|date('Y-m-d\\TH:i') }}" data-duration="{{ meeting.duration_minutes }}" data-participants="{{ meeting.participants|e('html_attr') }}" data-summary="{{ meeting.summary|e('html_attr') }}" data-decisions="{{ meeting.decisions|e('html_attr') }}" data-actions="{{ meeting.actions|e('html_attr') }}"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-ghost-danger pf-meeting-delete" type="button" data-id="{{ meeting.id }}"><i class="ti ti-trash"></i></button></div>{% endif %}</header>{% if meeting.participants %}<p><strong>Participantes:</strong> {{ meeting.participants }}</p>{% endif %}{% if meeting.summary %}<p><strong>Resumo:</strong> {{ meeting.summary }}</p>{% endif %}{% if meeting.decisions %}<p><strong>Decisões:</strong> {{ meeting.decisions }}</p>{% endif %}{% if meeting.actions %}<p><strong>Pendências:</strong> {{ meeting.actions }}</p>{% endif %}</div></article>{% else %}<div class="pf-empty-state"><i class="ti ti-calendar-off"></i><strong>Nenhuma reunião registrada</strong><p>Use esta área para separar alinhamentos da execução técnica.</p></div>{% endfor %}</div>
+      <div class="pf-meeting-list" id="pf-meeting-list">{% for meeting in project.meetings %}<article class="pf-panel pf-meeting-card"><div class="pf-meeting-date"><strong>{{ meeting.start_at|date('d') }}</strong><span>{{ ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][(meeting.start_at|date('n')) - 1] }}</span></div><div class="pf-meeting-body"><header><div><h3>{{ meeting.title }}</h3><span>{{ meeting.start_at|date('d/m/Y H:i') }} · {{ meeting.duration_label }} · {{ meeting.user_name }}</span></div>{% if project.can_update %}<div class="pf-meeting-actions"><button class="btn btn-sm btn-ghost-secondary pf-meeting-edit" type="button" data-bs-toggle="modal" data-bs-target="#pf-meeting-modal" data-id="{{ meeting.id }}" data-title="{{ meeting.title|e('html_attr') }}" data-start="{{ meeting.start_at|date('Y-m-d\\TH:i') }}" data-duration="{{ meeting.duration_minutes }}" data-participants="{{ meeting.participants|e('html_attr') }}" data-summary="{{ meeting.summary|e('html_attr') }}" data-decisions="{{ meeting.decisions|e('html_attr') }}" data-actions="{{ meeting.actions|e('html_attr') }}"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-ghost-danger pf-meeting-delete" type="button" data-id="{{ meeting.id }}"><i class="ti ti-trash"></i></button></div>{% endif %}</header>{% if meeting.participants %}<p><strong>Participantes:</strong> {{ meeting.participants }}</p>{% endif %}{% if meeting.summary %}<p><strong>Resumo:</strong> {{ meeting.summary }}</p>{% endif %}{% if meeting.decisions %}<p><strong>Decisões:</strong> {{ meeting.decisions }}</p>{% endif %}{% if meeting.actions %}<p><strong>Pendências:</strong> {{ meeting.actions }}</p>{% endif %}</div></article>{% else %}<div class="pf-empty-state"><i class="ti ti-calendar-off"></i><strong>Nenhuma reunião registrada</strong><p>Use esta área para separar alinhamentos da execução técnica.</p></div>{% endfor %}</div>
     </section>
 
     <section class="pf-tab-pane" data-pf-pane="weekly">
@@ -158,9 +247,38 @@
     </section>
 
     <section class="pf-tab-pane" data-pf-pane="team">
-      <div class="pf-section-heading"><div><div class="pf-eyebrow">PESSOAS</div><h2>Equipe do projeto</h2><p>Ao atribuir alguém a uma tarefa, a pessoa entra automaticamente nesta equipe.</p></div></div>
-      {% if project.can_update %}<form class="pf-inline-form pf-team-add-form"><input type="hidden" name="project_id" value="{{ project.id }}"><select name="itemtype" class="form-select pf-member-type"><option value="User">Usuário</option><option value="Group">Grupo</option><option value="Supplier">Fornecedor</option><option value="Contact">Contato</option></select><select name="items_id" class="form-select pf-member-select"><option value="">Selecione...</option>{% for user in users %}<option data-kind="User" value="{{ user.id }}">{{ user.name }}</option>{% endfor %}{% for group in groups %}<option data-kind="Group" value="{{ group.id }}">{{ group.name }}</option>{% endfor %}{% for supplier in suppliers %}<option data-kind="Supplier" value="{{ supplier.id }}">{{ supplier.name }}</option>{% endfor %}{% for contact in contacts %}<option data-kind="Contact" value="{{ contact.id }}">{{ contact.name }}</option>{% endfor %}</select><button class="btn btn-primary"><i class="ti ti-user-plus"></i> Adicionar</button></form>{% endif %}
-      <div class="pf-team-grid">{% for member in project.team %}<article class="pf-panel pf-team-card"><span class="pf-avatar pf-avatar-lg">{{ member.name|slice(0,1)|upper }}</span><div><strong>{{ member.name }}</strong><span>{{ member.type_label }}</span></div>{% if project.can_update %}<button class="btn btn-sm btn-ghost-danger pf-team-remove" data-id="{{ member.relation_id }}"><i class="ti ti-x"></i></button>{% endif %}</article>{% else %}<div class="pf-empty-state">Equipe ainda não definida.</div>{% endfor %}</div>
+      <div class="pf-tm-head">
+        <div><div class="pf-eyebrow">PESSOAS</div><h2>Equipe do projeto</h2><p>Quem participa e com qual função. Ao atribuir alguém a uma tarefa, a pessoa entra automaticamente na equipe.</p></div>
+        <div class="pf-tm-stats"><div><strong>{{ project.team|length }}</strong><span>membro(s)</span></div><div><strong>{{ team_groups|filter(g => g.id)|length }}</strong><span>função(ões)</span></div>{% if project.can_update %}<button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#pf-roles-modal"><i class="ti ti-id-badge-2"></i> Gerenciar funções</button>{% endif %}</div>
+      </div>
+      {% if project.can_update %}
+      <form class="pf-tm-add pf-team-add-form"><input type="hidden" name="project_id" value="{{ project.id }}">
+        <span class="pf-tm-add-icon"><i class="ti ti-user-plus"></i></span>
+        <label>Tipo<select name="itemtype" class="form-select pf-member-type"><option value="User">Usuário</option><option value="Group">Grupo</option><option value="Supplier">Fornecedor</option><option value="Contact">Contato</option></select></label>
+        <label class="pf-tm-grow">Quem<select name="items_id" class="form-select pf-member-select" required><option value="">Selecione...</option>{% for user in users %}<option data-kind="User" value="{{ user.id }}">{{ user.name }}</option>{% endfor %}{% for group in groups %}<option data-kind="Group" value="{{ group.id }}">{{ group.name }}</option>{% endfor %}{% for supplier in suppliers %}<option data-kind="Supplier" value="{{ supplier.id }}">{{ supplier.name }}</option>{% endfor %}{% for contact in contacts %}<option data-kind="Contact" value="{{ contact.id }}">{{ contact.name }}</option>{% endfor %}</select></label>
+        <label>Função<select name="roles_id" class="form-select"><option value="0">Sem função</option>{% for role in team_roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></label>
+        <button class="btn btn-primary" type="submit"><i class="ti ti-plus"></i> Adicionar à equipe</button>
+      </form>
+      {% endif %}
+      {% if project.team is empty %}
+        <div class="pf-tm-empty"><span class="pf-tm-empty-icon"><i class="ti ti-users-plus"></i></span><strong>Equipe ainda não definida</strong><span>Adicione as pessoas do projeto e defina a função de cada uma.</span></div>
+      {% else %}
+        {% for r in team_groups %}
+          <section class="pf-tm-group{{ r.id ? '' : ' is-norole' }}" style="--pf-role-color:{{ r.color }}"><header><i class="pf-role-dot"></i><strong>{{ r.name }}</strong><span>{{ r.count }}</span>{% if r.comment %}<small>{{ r.comment }}</small>{% endif %}</header>
+            <div class="pf-tm-grid">{% for member in r.members %}
+        <article class="pf-tm-card" style="--pf-role-color:{{ member.role ? member.role.color : '#94a3b8' }}">
+          <span class="pf-tm-avatar">{% if member.type == 'Group' %}<i class="ti ti-users"></i>{% elseif member.type == 'Supplier' %}<i class="ti ti-building"></i>{% else %}{{ member.initials }}{% endif %}</span>
+          <div class="pf-tm-info">
+            <div class="pf-tm-name"><strong title="{{ member.name }}">{{ member.name }}</strong>{% if member.is_manager %}<span class="pf-tm-tag" title="Responsável pelo projeto"><i class="ti ti-star"></i> Responsável</span>{% endif %}</div>
+            <div class="pf-tm-meta"><span>{{ member.type_label }}</span><span><i class="ti ti-list-check"></i> {{ member.tasks_count }} tarefa(s)</span>{% if member.type == 'User' %}<span><i class="ti ti-clock"></i> {{ member.hours_label }}</span>{% endif %}</div>
+            {% if project.can_update %}<select class="form-select form-select-sm pf-role-select pf-tm-role" data-relation-id="{{ member.relation_id }}" title="Função no projeto"><option value="0">Sem função</option>{% for role in team_roles %}<option value="{{ role.id }}" {{ member.role and member.role.id == role.id ? 'selected' : '' }}>{{ role.name }}</option>{% endfor %}</select>{% elseif member.role %}<span class="pf-role-badge"><i></i>{{ member.role.name }}</span>{% endif %}
+          </div>
+          {% if project.can_update %}<button class="btn btn-sm btn-ghost-danger pf-icon-btn pf-team-remove pf-tm-remove" data-id="{{ member.relation_id }}" title="Remover da equipe"><i class="ti ti-x"></i></button>{% endif %}
+        </article>
+            {% endfor %}</div>
+          </section>
+        {% endfor %}
+      {% endif %}
     </section>
 
     <section class="pf-tab-pane" data-pf-pane="files">
@@ -179,8 +297,9 @@
 
   {% if project.can_update %}
   <div class="modal fade" id="pf-task-create-modal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><form id="pf-task-create-form">
-    <div class="modal-header"><div><div class="pf-eyebrow">EXECUÇÃO</div><h2 class="modal-title">Nova tarefa</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-header"><div><div class="pf-eyebrow">EXECUÇÃO</div><h2 class="modal-title" id="pf-task-create-title">Nova tarefa</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
     <div class="modal-body"><input type="hidden" name="project_id" value="{{ project.id }}"><div class="row g-3">
+      <div class="col-12 pf-parent-task-wrap d-none"><label class="form-label">Tarefa pai *</label><select name="projecttasks_id" class="form-select pf-parent-task-select"><option value="0">Selecione a tarefa pai...</option>{% for t in tasks_tree %}<option value="{{ t.id }}">{% if t.depth %}{% for i in 1..t.depth %}&nbsp;&nbsp;&nbsp;{% endfor %}↳ {% endif %}#{{ t.id }} · {{ t.name }}</option>{% endfor %}</select><small class="text-muted">Somente tarefas deste projeto.</small></div>
       <div class="col-12"><label class="form-label">Título *</label><input name="name" class="form-control" required maxlength="255"></div>
       <div class="col-md-3"><label class="form-label">Estado *</label><select name="projectstates_id" class="form-select" required>{% for state in states %}<option value="{{ state.id }}" {{ state.id == default_task_state_id ? 'selected' : '' }}>{{ state.name }}</option>{% endfor %}</select></div>
       <div class="col-md-3"><label class="form-label">Prioridade</label><select name="priority" class="form-select">{% for p in priorities %}<option value="{{ p.id }}" {{ p.id == 3 ? 'selected' : '' }}>{{ p.name }}</option>{% endfor %}</select></div>
@@ -198,6 +317,11 @@
   </form></div></div></div>
 
   <div class="modal fade" id="pf-meeting-modal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><form id="pf-meeting-form"><div class="modal-header"><div><div class="pf-eyebrow">ALINHAMENTO</div><h2 class="modal-title" id="pf-meeting-modal-title">Registrar reunião</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="hidden" name="project_id" value="{{ project.id }}"><input type="hidden" name="meeting_id" value="0"><div class="row g-3"><div class="col-md-8"><label class="form-label">Título *</label><input name="title" required class="form-control"></div><div class="col-md-4"><label class="form-label">Data e hora *</label><input type="datetime-local" name="start_at" required class="form-control"></div><div class="col-md-4"><label class="form-label">Duração (min) *</label><input type="number" min="1" max="1440" name="duration_minutes" value="60" class="form-control"></div><div class="col-md-8"><label class="form-label">Participantes</label><input name="participants" class="form-control" placeholder="Nomes, grupos ou cliente"></div><div class="col-12"><label class="form-label">Resumo</label><textarea name="summary" class="form-control" rows="3"></textarea></div><div class="col-md-6"><label class="form-label">Decisões</label><textarea name="decisions" class="form-control" rows="3"></textarea></div><div class="col-md-6"><label class="form-label">Pendências / ações</label><textarea name="actions" class="form-control" rows="3"></textarea></div></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary" id="pf-meeting-submit">Registrar reunião</button></div></form></div></div></div>
+
+  <div class="modal fade" id="pf-roles-modal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><div><div class="pf-eyebrow">EQUIPE</div><h2 class="modal-title">Funções da equipe</h2><p class="mb-0 text-muted small">Valem só para {{ project.is_template ? 'este template (e são copiadas para os projetos criados a partir dele)' : 'este projeto' }}. Excluir uma função tira ela de quem a tinha.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">
+    <div class="pf-role-list">{% for role in team_roles %}<div class="pf-role-item" style="--pf-role-color:{{ role.color }}"><i class="pf-role-dot"></i><div><strong>{{ role.name }}</strong>{% if role.comment %}<small>{{ role.comment }}</small>{% endif %}</div><span class="pf-role-usage" title="Membros com esta função">{{ role.usage }}</span><button type="button" class="btn btn-sm btn-ghost-secondary pf-icon-btn pf-role-edit" data-role="{{ {'id': role.id, 'name': role.name, 'color': role.color, 'comment': role.comment}|json_encode|e('html_attr') }}" title="Editar"><i class="ti ti-pencil"></i></button><button type="button" class="btn btn-sm btn-ghost-danger pf-icon-btn pf-role-delete" data-id="{{ role.id }}" data-name="{{ role.name }}" title="Excluir"><i class="ti ti-trash"></i></button></div>{% else %}<div class="pf-empty-inline">Nenhuma função cadastrada. Crie a primeira abaixo (ex.: Gerente do projeto, Analista, Ponto focal do cliente).</div>{% endfor %}</div>
+    <form class="pf-role-form"><input type="hidden" name="role_id" value="0"><div class="pf-role-form-title">Nova função</div><div class="pf-role-form-grid"><input name="name" class="form-control" maxlength="120" required placeholder="Ex.: Gerente do projeto"><input type="color" name="color" class="form-control form-control-color" value="#4263eb" title="Cor"><button class="btn btn-primary" type="submit"><i class="ti ti-device-floppy"></i> Salvar</button></div><input name="comment" class="form-control form-control-sm mt-2" maxlength="500" placeholder="Descrição (opcional)"><div class="pf-form-message"></div></form>
+  </div></div></div></div>
 
   <div class="modal fade" id="pf-contract-modal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content"><div class="modal-header"><div><div class="pf-eyebrow">CONTRATO</div><h2 class="modal-title">Contrato do projeto</h2><p class="mb-0 text-muted">Vincule o contrato da empresa/cliente a este projeto.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">
     <div class="pf-contract-list mb-3">{% for contract in project.contracts %}<div class="pf-linked-item"><i class="ti ti-file-certificate"></i><div><a href="{{ contract.url }}"><strong>{{ contract.name }}</strong></a><span>{{ contract.number ?: 'Sem número' }}{% if contract.begin_date %} · {{ contract.begin_date|date('d/m/Y') }}{% endif %}</span></div>{% if project.can_update %}<button class="btn btn-sm btn-ghost-danger pf-contract-unlink" data-id="{{ contract.relation_id }}"><i class="ti ti-unlink"></i></button>{% endif %}</div>{% else %}<div class="pf-empty-inline">Nenhum contrato vinculado ao projeto.</div>{% endfor %}</div>

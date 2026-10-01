@@ -649,7 +649,90 @@ class TaskService
         }
         $today = time();
         $todayPct = $today < $windowStart ? 0 : ($today > $windowEnd ? 100 : (($today - $windowStart) / $span) * 100);
-        return ['has_dates' => true, 'items' => $items, 'start_label' => date('d/m/Y', $windowStart), 'end_label' => date('d/m/Y', $windowEnd), 'today_pct' => round($todayPct, 2)];
+        // Week ticks (Mondays) for the Gantt header; thinned out on long projects.
+        $ticks = [];
+        $monday = strtotime('monday this week', $windowStart);
+        $weeks = max(1, (int) ceil(($windowEnd - $monday) / (7 * DAY_TIMESTAMP)));
+        $step = $weeks > 26 ? 4 : ($weeks > 12 ? 2 : 1);
+        for ($w = 0, $t = $monday; $t <= $windowEnd; $w++, $t = strtotime('+1 week', $t)) {
+            if ($t < $windowStart || $w % $step) continue;
+            $ticks[] = ['pct' => round((($t - $windowStart) / $span) * 100, 2), 'label' => date('d/m', $t)];
+        }
+        $inWindow = $today >= $windowStart && $today <= $windowEnd;
+        return ['has_dates' => true, 'items' => $items, 'ticks' => $ticks, 'start_label' => date('d/m/Y', $windowStart), 'end_label' => date('d/m/Y', $windowEnd), 'today_pct' => $inWindow ? round($todayPct, 2) : null, 'days' => (int) round($span / DAY_TIMESTAMP)];
+    }
+
+    /**
+     * Gantt data for the Cronograma tab: day columns on short projects, week columns on long ones,
+     * window aligned to whole weeks and stretched to include today, rows in tree order.
+     */
+    public function buildGantt(array $tree, array $project): array
+    {
+        $day = 86400;
+        $midnight = static fn(int $ts): int => (int) strtotime(date('Y-m-d', $ts));
+        $dated = array_values(array_filter($tree, static fn(array $t): bool => !empty($t['plan_start_ts']) && !empty($t['plan_end_ts'])));
+        if (!$dated) return ['has_dates' => false, 'rows' => [], 'columns' => [], 'months' => []];
+        $today = $midnight(time());
+        $min = $midnight((int) min(array_column($dated, 'plan_start_ts')));
+        $max = $midnight((int) max(array_column($dated, 'plan_end_ts')));
+        if (!empty($project['plan_start_ts'])) $min = min($min, $midnight((int) $project['plan_start_ts']));
+        if (!empty($project['plan_end_ts'])) $max = max($max, $midnight((int) $project['plan_end_ts']));
+        if ($today < $min && $min - $today <= 45 * $day) $min = $today;
+        if ($today > $max && $today - $max <= 45 * $day) $max = $today;
+        $start = (int) strtotime('monday this week', $min);
+        $end = (int) strtotime('sunday this week', $max);
+        $days = (int) round(($end - $start) / $day) + 1;
+        if ($days < 14) { $end = (int) strtotime('+' . (14 - $days) . ' days', $end); $days = 14; }
+        $mode = $days <= 63 ? 'day' : 'week';
+        $idx = static fn(int $ts): int => (int) round(($midnight($ts) - $start) / $day);
+        $pct = static fn(float $d): float => round($d / $days * 100, 3);
+        $wd = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+        $mn = [1 => 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+        $columns = []; $months = [];
+        for ($i = 0; $i < $days; $i++) {
+            $ts = (int) strtotime('+' . $i . ' days', $start);
+            $key = date('Y-m', $ts);
+            if (!$months || $months[count($months) - 1]['key'] !== $key) $months[] = ['key' => $key, 'label' => $mn[(int) date('n', $ts)] . ' ' . date('Y', $ts), 'from' => $i, 'to' => $i];
+            else $months[count($months) - 1]['to'] = $i;
+            $w = (int) date('w', $ts);
+            if ($mode === 'day') {
+                $columns[] = ['label' => date('j', $ts), 'sub' => $wd[$w], 'is_weekend' => $w === 0 || $w === 6, 'is_today' => $ts === $today, 'is_week_start' => $w === 1];
+            } elseif ($w === 1) {
+                $columns[] = ['label' => date('d/m', $ts), 'sub' => 'S' . (int) date('W', $ts), 'is_weekend' => false, 'is_today' => $today >= $ts && $today < $ts + 7 * $day, 'is_week_start' => true];
+            }
+        }
+        foreach ($months as &$m) { $m['left'] = $pct($m['from']); $m['width'] = $pct($m['to'] - $m['from'] + 1); $m['short'] = ($m['to'] - $m['from'] + 1) < ($mode === 'day' ? 4 : 10); } unset($m);
+        $todayIdx = ($today >= $start && $today <= $end) ? $idx($today) : null;
+        $rows = [];
+        foreach ($dated as $t) {
+            $s = $idx((int) $t['plan_start_ts']); $e = max($s, $idx((int) $t['plan_end_ts']));
+            $s = max(0, min($days - 1, $s)); $e = max($s, min($days - 1, $e));
+            $milestone = !empty($t['is_milestone']);
+            $left = $milestone ? $pct($e + 0.5) : $pct($s);
+            $width = $milestone ? 0 : $pct($e - $s + 1);
+            $finished = !empty($t['state']['is_finished']) || (int) ($t['percent_done'] ?? 0) >= 100;
+            $late = !$finished && $todayIdx !== null && $todayIdx > $e;
+            $lateDays = (!$finished && $today > $midnight((int) $t['plan_end_ts'])) ? (int) round(($today - $midnight((int) $t['plan_end_ts'])) / $day) : 0;
+            $tail = $left + $width;
+            $rows[] = $t + [
+                'g_left' => $left,
+                'g_width' => $width,
+                'g_late_left' => $late ? $pct($e + 1) : null,
+                'g_late_width' => $late ? $pct($todayIdx - $e) : null,
+                'g_late_days' => $lateDays,
+                'g_finished' => $finished,
+                'g_label_left' => ($late ? $pct($todayIdx + 1) : $tail) > 72,
+                'g_range' => $milestone ? date('d/m', (int) $t['plan_end_ts']) : (date('d/m', (int) $t['plan_start_ts']) . ' – ' . date('d/m', (int) $t['plan_end_ts'])),
+                'g_days' => $e - $s + 1,
+            ];
+        }
+        return [
+            'has_dates' => true, 'mode' => $mode, 'days' => $days, 'cols' => count($columns),
+            'columns' => $columns, 'months' => $months, 'rows' => $rows,
+            'today_pct' => $todayIdx !== null ? $pct($todayIdx + 0.5) : null,
+            'today_label' => date('d/m', $today),
+            'start_label' => date('d/m/Y', $start), 'end_label' => date('d/m/Y', $end),
+        ];
     }
 
     private function getTickets(int $taskId): array

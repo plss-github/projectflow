@@ -249,6 +249,7 @@ class ProjectService
             $projectId = $source->clone($override, true, $asTemplate);
             if ($projectId) {
                 $taskMap = $this->copyClonedTaskMetas($sourceId, (int) $projectId);
+                (new TeamRoleService())->copyFromProject($sourceId, (int) $projectId);
                 // Tasks unchecked in the "Novo projeto" form are not kept in the new project.
                 if (!$asTemplate && !empty($input['template_tasks_filtered'])) {
                     $keep = array_values(array_filter(array_map('intval', explode(',', (string) ($input['template_task_ids'] ?? '')))));
@@ -282,6 +283,7 @@ class ProjectService
             'cost_mode' => $input['cost_mode'] ?? ($sourceMeta['cost_mode'] ?? Config::get('default_cost_mode','hours')),
         ] + $input + $sourceMeta);
         $this->repairClonedTaskStates($projectId);
+        if (!empty($input['roles']) && is_array($input['roles'])) (new TeamRoleService())->createFromInput($projectId, $input['roles']);
         $this->createInitialTasks($projectId, (array) ($input['tasks'] ?? []));
         return (int) $projectId;
     }
@@ -363,7 +365,9 @@ class ProjectService
         if (!$project->getFromDB($projectId) || !$project->can($projectId, UPDATE)) return false;
         $relation = new ProjectTeam();
         if (!$relation->getFromDB($relationId) || (int) $relation->fields['projects_id'] !== $projectId) return false;
-        return (bool) $relation->delete(['id' => $relationId]);
+        $ok = (bool) $relation->delete(['id' => $relationId]);
+        if ($ok) (new TeamRoleService())->forgetRelation($relationId);
+        return $ok;
     }
 
     public function getDashboardStats(array $projects): array
@@ -388,6 +392,35 @@ class ProjectService
             'relation_id' => (int) $member['id'], 'type' => $type, 'type_label' => $labels[$type] ?? $type,
             'id' => (int) $member['items_id'], 'name' => $member['display_name'] ?? $member['name'] ?? ('#' . $member['items_id']),
         ];
+        $roles = (new TeamRoleService())->rolesForRelations(array_column($items, 'relation_id'));
+        // Per member: tasks executed in this project and hours logged (execution + meetings).
+        global $DB;
+        $taskCount = [];
+        foreach ($DB->request([
+            'SELECT' => ['glpi_projecttaskteams.itemtype', 'glpi_projecttaskteams.items_id', 'glpi_projecttaskteams.projecttasks_id'],
+            'FROM' => 'glpi_projecttaskteams',
+            'INNER JOIN' => ['glpi_projecttasks' => ['ON' => ['glpi_projecttaskteams' => 'projecttasks_id', 'glpi_projecttasks' => 'id']]],
+            'WHERE' => ['glpi_projecttasks.projects_id' => $projectId, 'glpi_projecttasks.is_deleted' => 0],
+        ]) as $r) $taskCount[$r['itemtype'] . '#' . $r['items_id']][(int) $r['projecttasks_id']] = true;
+        $minutes = [];
+        if ($DB->tableExists('glpi_plugin_projectflow_worklogs')) {
+            foreach ($DB->request(['SELECT' => ['users_id', 'minutes'], 'FROM' => 'glpi_plugin_projectflow_worklogs', 'WHERE' => ['projects_id' => $projectId]]) as $r) {
+                $minutes[(int) $r['users_id']] = ($minutes[(int) $r['users_id']] ?? 0) + (int) $r['minutes'];
+            }
+        }
+        $project = new Project();
+        $managerId = $project->getFromDB($projectId) ? (int) ($project->fields['users_id'] ?? 0) : 0;
+        foreach ($items as &$it) {
+            $it['role'] = $roles[$it['relation_id']] ?? null;
+            $it['tasks_count'] = count($taskCount[$it['type'] . '#' . $it['id']] ?? []);
+            $m = $it['type'] === User::class ? (int) ($minutes[$it['id']] ?? 0) : 0;
+            $it['minutes'] = $m;
+            $it['hours_label'] = WorklogService::formatMinutes($m);
+            $it['is_manager'] = $it['type'] === User::class && $it['id'] === $managerId;
+            $words = preg_split('/\s+/', trim((string) $it['name'])) ?: [];
+            $it['initials'] = mb_strtoupper(mb_substr($words[0] ?? '?', 0, 1) . (count($words) > 1 ? mb_substr((string) end($words), 0, 1) : mb_substr($words[0] ?? '', 1, 1)));
+        }
+        unset($it);
         return $items;
     }
 

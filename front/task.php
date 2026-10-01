@@ -15,7 +15,6 @@ if ($embed) {
     plugin_projectflow_display('task-native.html.twig',$data);
     Html::popFooter();
 } else {
-    Html::header('Minhas tarefas - '.$data['task']['name'], $_SERVER['PHP_SELF'], 'tools', plugin_projectflow_header_item());
-    plugin_projectflow_display('task-native.html.twig',$data);
-    Html::footer();
+    // The task has no full-page screen anymore: it always opens as a popup over its project.
+    Html::redirect(PLUGIN_PROJECTFLOW_WEBDIR . '/front/project.php?id=' . (int) $data['task']['projects_id'] . '&task=' . $id . '#execution');
 }
