@@ -1,7 +1,7 @@
 # Build information
 
 - Plugin: Project Flow
-- Version: 3.5.1
+- Version: 3.5.2
 - Build date: 2026-10-01
 - Target: GLPI 11.0.x / PHP 8.2+
 - Assets: `public/css/projectflow.css`, `public/js/projectflow.js`

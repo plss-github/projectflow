@@ -1,4 +1,4 @@
-# Validação do pacote 3.5.1
+# Validação do pacote 3.5.2
 
 ## Validações executadas no build
 

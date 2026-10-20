@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.5.1 - 2026-10-01
+## 3.5.2 - 2026-10-20
 
 ### Custos nas tarefas com aprovação (novo)
 
@@ -72,6 +72,8 @@
 
 ### Resumo do projeto
 - Aba Resumo redesenhada em grade alinhada (todos os cards de uma linha com a mesma altura, cabeçalho com ícone e contador e rodapé com atalho): "Andamento do projeto" com anel de progresso, distribuição das tarefas por estado e linha do prazo (início, prazo, dias restantes e marcador de hoje); "Indicadores" clicáveis (em aberto, concluídas, em atraso com o maior atraso, atenção); "Precisa de atenção" (atrasadas com dias de atraso e pontos de atenção); "Próximas entregas" (data, prazo relativo, % feito, estado e aviso de tarefas sem prazo); Equipe, Última reunião (pendências/decisões) e Governança (risco em português, contrato abre o visualizador). O objetivo, que já aparece no topo, saiu do Resumo.
+
+## 3.5.1 - 2026-10-01
 
 ### Revisão visual
 - Portfólio: o filtro de portfólio não some mais em telas abaixo de 1400px; rótulos dos indicadores (ex.: "Minhas tarefas") quebram linha em vez de serem cortados.
