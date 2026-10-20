@@ -1,0 +1,12 @@
+<div class="pf-app pf-wl-page" id="projectflow-workload-page">
+  <section class="pf-wl-page-header">
+    <div>
+      <div class="pf-breadcrumb-row"><a href="{{ dashboard_url }}">Projetos</a><span>/</span><strong>Carga de trabalho</strong></div>
+      <h1>Carga de trabalho</h1>
+      <p>Horas planejadas das tarefas de todos os projetos contra a capacidade de cada pessoa, semana a semana.</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="{{ tasks_url }}"><i class="ti ti-list-check"></i> Minhas tarefas</a>
+  </section>
+  <div class="pf-wl" data-pf-workload data-endpoint="{{ ajax_workload_url }}" data-csrf="{{ csrf_token }}"
+       data-projects="{{ projects|json_encode|e('html_attr') }}" data-groups="{{ groups|json_encode|e('html_attr') }}"></div>
+</div>

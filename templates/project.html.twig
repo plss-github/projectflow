@@ -41,29 +41,124 @@
     <button data-pf-tab="execution"><i class="ti ti-layout-kanban"></i> Execução <span>{{ tasks|length }}</span></button>
     <button data-pf-tab="schedule"><i class="ti ti-calendar-stats"></i> Cronograma</button>
     <button data-pf-tab="hours"><i class="ti ti-{{ project.has_money and project.can_view_money ? 'wallet' : 'clock-hour-4' }}"></i> {{ project.cost_mode == 'both' and project.can_view_money ? 'Horas e custos' : (project.has_money and project.can_view_money ? 'Financeiro' : 'Horas') }}</button>
+    {% if project.cost_approvals is not null %}<button data-pf-tab="approvals" title="Custos lançados nas tarefas: aprovar ou recusar antes de entrarem no financeiro"><i class="ti ti-currency-dollar"></i> Aprovações{% if project.cost_approvals.pending %} <span class="pf-tab-alert">{{ project.cost_approvals.pending }}</span>{% endif %}</button>{% endif %}
     <button data-pf-tab="meetings"><i class="ti ti-users"></i> Reuniões <span>{{ project.meetings|length }}</span></button>
     <button data-pf-tab="weekly"><i class="ti ti-report"></i> Relatório semanal</button>
     <button data-pf-tab="team"><i class="ti ti-users-group"></i> Equipe <span>{{ project.team|length }}</span></button>
+    {% if not project.is_template %}<button data-pf-tab="workload" title="Carga de trabalho da equipe: horas planejadas x capacidade, incluindo outros projetos"><i class="ti ti-chart-bar"></i> Carga</button>{% endif %}
     <button data-pf-tab="files"><i class="ti ti-folder"></i> Arquivos</button>
   </nav>
 
   <main class="pf-workspace-content">
     <section class="pf-tab-pane is-active" data-pf-pane="overview">
-      <div class="pf-overview-v3">
-        <section class="pf-panel pf-overview-main">
-          <div class="pf-panel-header"><div><div class="pf-eyebrow">STATUS DO PROJETO</div><h2>Visão rápida</h2></div><span class="pf-health pf-health-{{ project.health_effective }}"><i></i>{{ project.health_effective == 'good' ? 'Saudável' : (project.health_effective == 'attention' ? 'Atenção' : 'Crítico') }}</span></div>
-          <div class="pf-kpi-grid pf-kpi-grid-mini">
-            <div><span>Tarefas</span><strong>{{ task_stats.total }}</strong></div><div><span>Concluídas</span><strong>{{ task_stats.completed }}</strong></div><div><span>Em atraso</span><strong>{{ task_stats.overdue }}</strong></div><div><span>Pontos de atenção</span><strong>{{ task_stats.attention }}</strong></div>
+      {% set ov = overview %}{% set pct = project.percent_done|default(0) %}
+      {% set health_label = project.health_effective == 'good' ? 'Saudável' : (project.health_effective == 'attention' ? 'Atenção' : 'Crítico') %}
+      <div class="pf-ov">
+
+        <section class="pf-ov-card pf-ov-a">
+          <header class="pf-ov-head"><span class="pf-ov-ico is-amber"><i class="ti ti-chart-donut-3"></i></span><h3>Andamento do projeto</h3><span class="pf-health pf-health-{{ project.health_effective }}"><i></i>{{ health_label }}</span></header>
+          <div class="pf-ov-progress-body">
+            <div class="pf-ov-ring" style="--pf-pct:{{ pct }}"><div><strong>{{ pct }}<small>%</small></strong><span>concluído</span></div></div>
+            <div class="pf-ov-progress-info">
+              <div class="pf-ov-line">
+                <div class="pf-ov-line-head"><strong>{{ task_stats.completed }} de {{ task_stats.total }} tarefas concluídas</strong><span>{{ ov.open }} em aberto</span></div>
+                <div class="pf-ov-mix-bar">{% for m in ov.mix %}<span style="flex:{{ m.count }} 1 0;--pf-state-color:{{ m.color }}" title="{{ m.name }}: {{ m.count }}"></span>{% else %}<span class="is-empty"></span>{% endfor %}</div>
+                <div class="pf-ov-legend">{% for m in ov.mix %}<span style="--pf-state-color:{{ m.color }}"><i></i>{{ m.name }}<b>{{ m.count }}</b></span>{% endfor %}</div>
+              </div>
+              <div class="pf-ov-line">
+                {% set pr = ov.period %}
+                <div class="pf-ov-line-head"><strong>Prazo do projeto</strong><span class="{{ pr and pr.late ? 'is-danger' : '' }}">{{ pr ? pr.label : 'Período não definido' }}</span></div>
+                <div class="pf-ov-time {{ pr and pr.late ? 'is-late' : '' }}">{% if pr and pr.elapsed is not null %}<span style="width:{{ pr.elapsed }}%"></span><i style="left:{{ pr.elapsed }}%"></i>{% endif %}</div>
+                <div class="pf-ov-time-labels"><span>{{ pr and pr.start ? 'Início ' ~ pr.start : 'Sem início' }}</span><span>{{ pr and pr.end ? 'Prazo ' ~ pr.end : 'Sem prazo' }}</span></div>
+              </div>
+            </div>
           </div>
-          <div class="pf-project-description"><strong>Objetivo</strong><p>{{ project.objective ?: project.content ?: 'Não informado.' }}</p></div>
-          {% if task_stats.attention %}
-            <div class="pf-attention-list"><h3><i class="ti ti-alert-triangle"></i> Pontos de atenção abertos</h3>{% for task in tasks %}{% if task.attention %}<a href="{{ task.task_url }}"><span>{{ task.name }}</span><small>{{ task.attention_note ?: 'Marcada para atenção' }}</small></a>{% endif %}{% endfor %}</div>
-          {% endif %}
         </section>
-        <aside class="pf-overview-side">
-          <section class="pf-panel"><div class="pf-panel-header"><h3>Próximas entregas</h3><button class="btn btn-sm btn-ghost-secondary" data-pf-goto="execution">Ver execução</button></div>{% for task in upcoming_tasks %}<a class="pf-next-task" href="{{ task.task_url }}"><div><strong>{{ task.name }}</strong><span>{{ task.state.name }} · {{ task.percent_done }}%</span></div><time class="{{ task.is_overdue ? 'pf-text-danger' : '' }}">{{ task.plan_end_date ? task.plan_end_date|date('d/m') : '—' }}</time></a>{% else %}<div class="pf-empty-inline">Nenhuma tarefa ativa.</div>{% endfor %}</section>
-          <section class="pf-panel"><div class="pf-panel-header"><h3>Governança</h3></div><dl class="pf-detail-list"><div><dt>Patrocinador</dt><dd>{{ project.sponsor ?: 'Não definido' }}</dd></div><div><dt>Portfólio</dt><dd>{{ project.portfolio ?: 'Não definido' }}</dd></div><div><dt>Risco</dt><dd>{{ project.risk_level|capitalize }}</dd></div><div><dt>Contrato</dt><dd>{{ project.contracts|length ? project.contracts[0].name : 'Não vinculado' }}</dd></div></dl></section>
-        </aside>
+
+        <section class="pf-ov-card pf-ov-b">
+          <header class="pf-ov-head"><span class="pf-ov-ico is-blue"><i class="ti ti-gauge"></i></span><h3>Indicadores</h3></header>
+          <div class="pf-ov-tiles">
+            <button type="button" class="pf-ov-tile" data-pf-goto="execution"><span class="pf-ov-tile-top"><i class="ti ti-list-check"></i>Em aberto</span><strong>{{ ov.open }}</strong><small>de {{ task_stats.total }} tarefas</small></button>
+            <button type="button" class="pf-ov-tile is-good" data-pf-goto="execution"><span class="pf-ov-tile-top"><i class="ti ti-circle-check"></i>Concluídas</span><strong>{{ task_stats.completed }}</strong><small>{{ ov.done_pct }}% das tarefas</small></button>
+            <button type="button" class="pf-ov-tile {{ task_stats.overdue ? 'is-danger' : 'is-calm' }}" data-pf-goto="schedule"><span class="pf-ov-tile-top"><i class="ti ti-alarm"></i>Em atraso</span><strong>{{ task_stats.overdue }}</strong><small>{{ ov.max_late ? 'maior atraso: ' ~ ov.max_late ~ ' dia(s)' : 'nenhuma atrasada' }}</small></button>
+            <button type="button" class="pf-ov-tile {{ task_stats.attention ? 'is-warning' : 'is-calm' }}" data-pf-goto="execution"><span class="pf-ov-tile-top"><i class="ti ti-alert-triangle"></i>Atenção</span><strong>{{ task_stats.attention }}</strong><small>{{ task_stats.attention ? 'pontos em aberto' : 'nenhum ponto aberto' }}</small></button>
+          </div>
+        </section>
+
+        <section class="pf-ov-card pf-ov-half">
+          <header class="pf-ov-head"><span class="pf-ov-ico is-red"><i class="ti ti-urgent"></i></span><h3>Precisa de atenção</h3>{% if ov.attention_total %}<em class="pf-ov-count is-danger">{{ ov.attention_total }}</em>{% endif %}</header>
+          <div class="pf-ov-list">
+            {% for t in ov.attention %}
+              <a class="pf-ov-row-item" href="{{ t.task_url }}">
+                <span class="pf-ov-lead {{ t.is_overdue ? 'is-danger' : 'is-warning' }}"><i class="ti ti-{{ t.is_overdue ? 'alarm' : 'alert-triangle' }}"></i></span>
+                <span class="pf-ov-main"><strong>{{ t.name }}</strong><small>{% if t.is_overdue %}Prazo {{ t.plan_end_date|date('d/m') }}{% if t.ov_late_days %} · {{ t.ov_late_days }} dia(s) de atraso{% endif %}{% endif %}{% if t.is_overdue and t.attention %} · {% endif %}{% if t.attention %}{{ t.attention_note ?: 'Ponto de atenção' }}{% endif %}</small></span>
+                <span class="pf-ov-state" style="--pf-state-color:{{ t.state.color }}">{{ t.state.name }}</span>
+              </a>
+            {% else %}
+              <div class="pf-ov-empty is-good"><i class="ti ti-circle-check"></i><strong>Tudo em dia</strong><span>Nenhuma tarefa atrasada ou marcada como ponto de atenção.</span></div>
+            {% endfor %}
+          </div>
+          <button type="button" class="pf-ov-foot" data-pf-goto="execution"><span>{{ ov.attention_total > ov.attention|length ? '+ ' ~ (ov.attention_total - ov.attention|length) ~ ' na execução' : 'Abrir execução' }}</span><i class="ti ti-arrow-right"></i></button>
+        </section>
+
+        <section class="pf-ov-card pf-ov-half">
+          <header class="pf-ov-head"><span class="pf-ov-ico is-amber"><i class="ti ti-calendar-due"></i></span><h3>Próximas entregas</h3>{% if ov.upcoming|length %}<em class="pf-ov-count">{{ ov.upcoming|length }}</em>{% endif %}</header>
+          <div class="pf-ov-list">
+            {% for t in ov.upcoming %}
+              <a class="pf-ov-row-item" href="{{ t.task_url }}">
+                <span class="pf-ov-date {{ t.ov_days <= 2 ? 'is-soon' : '' }}"><b>{{ t.ov_day }}</b><small>{{ t.ov_month }}</small></span>
+                <span class="pf-ov-main"><strong>{% if t.is_milestone %}<i class="ti ti-flag-3 pf-ov-milestone"></i>{% endif %}{{ t.name }}</strong><small>{{ t.ov_when|capitalize }} · {{ t.percent_done }}% feito</small></span>
+                <span class="pf-ov-state" style="--pf-state-color:{{ t.state.color }}">{{ t.state.name }}</span>
+              </a>
+            {% else %}
+              <div class="pf-ov-empty"><i class="ti ti-calendar-off"></i><strong>Nenhuma entrega com prazo</strong><span>Defina prazos nas tarefas para acompanhar as entregas aqui.</span></div>
+            {% endfor %}
+          </div>
+          <button type="button" class="pf-ov-foot" data-pf-goto="schedule"><span>{{ ov.undated ? ov.undated ~ ' tarefa(s) em aberto sem prazo' : 'Abrir cronograma' }}</span><i class="ti ti-arrow-right"></i></button>
+        </section>
+
+        <section class="pf-ov-card pf-ov-third">
+          <header class="pf-ov-head"><span class="pf-ov-ico is-violet"><i class="ti ti-users-group"></i></span><h3>Equipe</h3><em class="pf-ov-count">{{ project.team|length }}</em></header>
+          <div class="pf-ov-list">
+            {% for m in project.team|slice(0, 4) %}
+              <div class="pf-ov-row-item" style="--pf-role-color:{{ m.role ? m.role.color : '#94a3b8' }}">
+                <span class="pf-ov-avatar">{{ m.initials }}</span>
+                <span class="pf-ov-main"><strong>{{ m.name }}{% if m.is_manager %} <i class="ti ti-crown pf-ov-crown" title="Responsável pelo projeto"></i>{% endif %}</strong><small>{{ m.role ? m.role.name : 'Sem função' }}</small></span>
+                <span class="pf-ov-meta">{{ m.tasks_count }} {{ m.tasks_count == 1 ? 'tarefa' : 'tarefas' }}</span>
+              </div>
+            {% else %}
+              <div class="pf-ov-empty"><i class="ti ti-user-plus"></i><strong>Sem equipe</strong><span>Adicione pessoas na aba Equipe.</span></div>
+            {% endfor %}
+          </div>
+          <button type="button" class="pf-ov-foot" data-pf-goto="team"><span>{{ project.team|length > 4 ? '+ ' ~ (project.team|length - 4) ~ ' pessoa(s)' : 'Gerenciar equipe' }}</span><i class="ti ti-arrow-right"></i></button>
+        </section>
+
+        <section class="pf-ov-card pf-ov-third">
+          {% set lm = ov.last_meeting %}
+          <header class="pf-ov-head"><span class="pf-ov-ico is-teal"><i class="ti ti-messages"></i></span><h3>Última reunião</h3>{% if project.meetings|length %}<em class="pf-ov-count">{{ project.meetings|length }}</em>{% endif %}</header>
+          <div class="pf-ov-list">
+            {% if lm %}
+              <div class="pf-ov-row-item"><span class="pf-ov-date"><b>{{ lm.ov_day }}</b><small>{{ lm.ov_month }}</small></span><span class="pf-ov-main"><strong>{{ lm.title }}</strong><small>{{ lm.duration_label }} · {{ lm.user_name }}</small></span></div>
+              {% set note = lm.actions ?: (lm.decisions ?: lm.summary) %}
+              <div class="pf-ov-quote"><span>{{ lm.actions ? 'Pendências' : (lm.decisions ? 'Decisões' : 'Resumo') }}</span><p>{{ note ?: 'Sem anotações registradas.' }}</p></div>
+            {% else %}
+              <div class="pf-ov-empty"><i class="ti ti-calendar-off"></i><strong>Nenhuma reunião</strong><span>Registre os alinhamentos na aba Reuniões.</span></div>
+            {% endif %}
+          </div>
+          <button type="button" class="pf-ov-foot" data-pf-goto="meetings"><span>{{ project.meetings|length ? 'Todas as reuniões' : 'Registrar reunião' }}</span><i class="ti ti-arrow-right"></i></button>
+        </section>
+
+        <section class="pf-ov-card pf-ov-third">
+          <header class="pf-ov-head"><span class="pf-ov-ico is-slate"><i class="ti ti-shield-check"></i></span><h3>Governança</h3></header>
+          <div class="pf-ov-list">
+            <div class="pf-ov-fact"><span><i class="ti ti-user-star"></i>Patrocinador</span><b class="{{ project.sponsor ? '' : 'is-empty' }}">{{ project.sponsor ?: 'Não definido' }}</b></div>
+            <div class="pf-ov-fact"><span><i class="ti ti-briefcase"></i>Portfólio</span><b class="{{ project.portfolio ? '' : 'is-empty' }}">{{ project.portfolio ?: 'Não definido' }}</b></div>
+            <div class="pf-ov-fact"><span><i class="ti ti-gauge"></i>Risco</span><b><em class="pf-ov-risk is-{{ project.risk_level }}">{{ {'low':'Baixo','normal':'Normal','high':'Alto','critical':'Crítico'}[project.risk_level]|default(project.risk_level) }}</em></b></div>
+            <div class="pf-ov-fact"><span><i class="ti ti-file-certificate"></i>Contrato</span>{% if project.contracts|length %}<button type="button" class="pf-ov-link" data-bs-toggle="modal" data-bs-target="#pf-contract-viewer" title="{{ project.contracts[0].name }}">{{ project.contracts[0].name }}</button>{% else %}<b class="is-empty">Não vinculado</b>{% endif %}</div>
+          </div>
+          {% if project.can_update %}<button type="button" class="pf-ov-foot" data-bs-toggle="modal" data-bs-target="#pf-project-edit-modal"><span>Editar governança</span><i class="ti ti-arrow-right"></i></button>{% else %}<div class="pf-ov-foot is-static"><span>Somente leitura</span></div>{% endif %}
+        </section>
+
       </div>
     </section>
 
@@ -91,7 +186,7 @@
         </section>
         {% else %}<div class="pf-empty-state"><i class="ti ti-columns-off"></i><strong>Nenhum estado configurado</strong><p>Cadastre estados no GLPI e defina o estado inicial nas configurações do Project Flow.</p></div>{% endfor %}
       </div>
-      <section class="pf-panel mt-3 d-none" data-pf-view-pane="list"><div class="table-responsive"><table class="table pf-table"><thead><tr><th>Tarefa</th><th>Estado</th><th>Prioridade</th><th>Progresso</th><th>Prazo</th><th class="text-end">Horas</th><th></th></tr></thead><tbody>{% for task in tasks_tree %}<tr class="pf-task-row pf-tree-depth-{{ task.depth }}{{ task.has_children ? ' has-children' : '' }}" data-search="{{ (task.name ~ ' ' ~ task.state.name ~ ' ' ~ task.priority_name ~ ' ' ~ task.type_name)|lower }}"><td><span class="pf-tree-cell" style="--pf-depth:{{ task.depth }}">{% if task.depth %}<i class="ti ti-corner-down-right pf-tree-elbow"></i>{% endif %}<a href="{{ task.task_url }}"><strong>{{ task.name }}</strong></a>{% if task.has_children %}<span class="pf-tree-badge" title="Tem subtarefas"><i class="ti ti-subtask"></i></span>{% endif %}</span>{% if task.attention %}<span class="pf-mini-attention"><i class="ti ti-alert-triangle"></i></span>{% endif %}</td><td>{{ task.state.name }}</td><td>{{ task.priority_name }}</td><td>{{ task.percent_done }}%</td><td class="{{ task.is_overdue ? 'pf-text-danger' : '' }}">{{ task.plan_end_date ? task.plan_end_date|date('d/m/Y') : '—' }}</td><td class="text-end text-nowrap" title="Execução {{ task.hours.execution_label }} · Reuniões {{ task.hours.meeting_label }}">{{ task.hours.total_label }}{% if task.hours.planned_label %} <small class="text-muted">/ {{ task.hours.planned_label }}</small>{% endif %}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ task.task_url }}">Abrir</a></td></tr>{% else %}<tr><td colspan="7" class="text-muted">Nenhuma tarefa ainda.{% if project.can_update %} <a href="#" data-bs-toggle="modal" data-bs-target="#pf-task-create-modal">Criar a primeira tarefa</a>{% endif %}</td></tr>{% endfor %}</tbody></table></div></section>
+      <section class="pf-panel mt-3 d-none" data-pf-view-pane="list"><div class="table-responsive"><table class="table pf-table" data-pf-tree data-pf-tree-key="pf-tree-{{ project.id }}"><thead><tr><th><span class="pf-tree-head">Tarefa{% if tasks_tree|filter(t => t.has_children)|length %}<span class="pf-tree-all"><button type="button" data-pf-tree-all="expand" title="Expandir todas"><i class="ti ti-chevrons-down"></i></button><button type="button" data-pf-tree-all="collapse" title="Recolher todas"><i class="ti ti-chevrons-up"></i></button></span>{% endif %}</span></th><th>Estado</th><th>Prioridade</th><th>Progresso</th><th>Prazo</th><th class="text-end">Horas</th><th></th></tr></thead><tbody>{% for task in tasks_tree %}<tr class="pf-task-row pf-tree-depth-{{ task.depth }}{{ task.has_children ? ' has-children' : '' }}" data-pf-tree-id="{{ task.id }}" data-pf-tree-parent="{{ task.parent_id|default(0) }}" data-search="{{ (task.name ~ ' ' ~ task.state.name ~ ' ' ~ task.priority_name ~ ' ' ~ task.type_name)|lower }}"><td><span class="pf-tree-cell" style="--pf-depth:{{ task.depth }}">{% if task.depth %}<i class="ti ti-corner-down-right pf-tree-elbow"></i>{% endif %}{% if task.has_children %}<button type="button" class="pf-tree-toggle" data-pf-tree-toggle aria-expanded="true" title="Ocultar subtarefas"><i class="ti ti-chevron-down"></i></button>{% else %}<span class="pf-tree-toggle-spacer"></span>{% endif %}<a href="{{ task.task_url }}"><strong>{{ task.name }}</strong></a>{% if task.has_children %}<span class="pf-tree-badge" title="Tem subtarefas"><i class="ti ti-subtask"></i></span>{% endif %}</span>{% if task.attention %}<span class="pf-mini-attention"><i class="ti ti-alert-triangle"></i></span>{% endif %}</td><td>{{ task.state.name }}</td><td>{{ task.priority_name }}</td><td>{{ task.percent_done }}%</td><td class="{{ task.is_overdue ? 'pf-text-danger' : '' }}">{{ task.plan_end_date ? task.plan_end_date|date('d/m/Y') : '—' }}</td><td class="text-end text-nowrap" title="Execução {{ task.hours.execution_label }} · Reuniões {{ task.hours.meeting_label }}">{{ task.hours.total_label }}{% if task.hours.planned_label %} <small class="text-muted">/ {{ task.hours.planned_label }}</small>{% endif %}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ task.task_url }}">Abrir</a></td></tr>{% else %}<tr><td colspan="7" class="text-muted">Nenhuma tarefa ainda.{% if project.can_update %} <a href="#" data-bs-toggle="modal" data-bs-target="#pf-task-create-modal">Criar a primeira tarefa</a>{% endif %}</td></tr>{% endfor %}</tbody></table></div></section>
     </section>
 
     <section class="pf-tab-pane" data-pf-pane="schedule">
@@ -110,16 +205,35 @@
       </div>
 
       {% if gantt.has_dates %}
-      <section class="pf-gx" style="--pf-gx-cols:{{ gantt.cols }};--pf-gx-unit:{{ gantt.mode == 'day' ? 38 : 84 }}px">
+      <section class="pf-gx is-view-plan" data-pf-gx style="--pf-gx-cols:{{ gantt.cols }};--pf-gx-unit:{{ gantt.mode == 'day' ? 38 : 84 }}px">
         <div class="pf-gx-toolbar">
-          <div class="pf-gx-legend">
+          <div class="pf-gx-legend pf-gx-legend-plan">
             <span><i class="pf-gx-key is-bar"></i>Planejado</span>
-            <span><i class="pf-gx-key is-progress"></i>Realizado</span>
+            <span><i class="pf-gx-key is-progress"></i>Andamento</span>
             <span><i class="pf-gx-key is-late"></i>Atraso</span>
             <span><i class="pf-gx-key is-milestone"></i>Marco</span>
             {% if gantt.today_pct is not null %}<span><i class="pf-gx-key is-today"></i>Hoje · {{ gantt.today_label }}</span>{% endif %}
           </div>
-          <span class="pf-gx-mode"><i class="ti ti-zoom-in"></i>{{ gantt.mode == 'day' ? 'Visão diária' : 'Visão semanal' }}</span>
+          <div class="pf-gx-legend pf-gx-legend-real">
+            <span><i class="pf-gx-key is-real"></i>Executado</span>
+            <span><i class="pf-gx-key is-real-open"></i>Em execução (até hoje)</span>
+            <span><i class="pf-gx-key is-milestone"></i>Marco entregue</span>
+            {% if gantt.today_pct is not null %}<span><i class="pf-gx-key is-today"></i>Hoje · {{ gantt.today_label }}</span>{% endif %}
+          </div>
+          <div class="pf-gx-legend pf-gx-legend-compare">
+            <span><i class="pf-gx-key is-plan-ghost"></i>Planejado</span>
+            <span><i class="pf-gx-key is-real"></i>Real</span>
+            <span><em class="pf-gx-var is-late">+3d</em>depois do prazo</span>
+            <span><em class="pf-gx-var is-early">-2d</em>antes do prazo</span>
+          </div>
+          <div class="pf-gx-tools">
+            <div class="pf-gx-views" role="group" aria-label="Cronograma">
+              <button type="button" class="is-active" data-pf-gx-view="plan"><i class="ti ti-calendar-event"></i>Planejado</button>
+              <button type="button" data-pf-gx-view="real"><i class="ti ti-player-play"></i>Real{% if gantt.real_count %} <em>{{ gantt.real_count }}</em>{% endif %}</button>
+              <button type="button" data-pf-gx-view="compare"><i class="ti ti-arrows-diff"></i>Comparar</button>
+            </div>
+            <span class="pf-gx-mode"><i class="ti ti-zoom-in"></i>{{ gantt.mode == 'day' ? 'Visão diária' : 'Visão semanal' }}</span>
+          </div>
         </div>
         <div class="pf-gx-scroll">
           <div class="pf-gx-grid">
@@ -128,23 +242,37 @@
             <div class="pf-gx-body">
               <div class="pf-gx-bg">{% for c in gantt.columns %}<i class="{{ c.is_weekend ? 'is-weekend' : '' }} {{ c.is_week_start ? 'is-week-start' : '' }} {{ c.is_today ? 'is-today' : '' }}"></i>{% endfor %}</div>
               {% for r in gantt.rows %}
-              <a class="pf-gx-row pf-gx-task {{ r.has_children ? 'is-parent' : '' }} {{ r.g_finished ? 'is-done' : '' }} {{ r.is_overdue ? 'is-overdue' : '' }}" href="{{ r.task_url }}" style="--pf-state-color:{{ r.state.color ?: '#4c7cf3' }}" title="{{ r.name }} · {{ r.g_range }} · {{ r.percent_done }}%">
+              <a class="pf-gx-row pf-gx-task {{ r.has_children ? 'is-parent' : '' }} {{ r.g_finished ? 'is-done' : '' }} {{ r.is_overdue ? 'is-overdue' : '' }} {{ r.g_has_plan ? '' : 'no-plan' }} {{ r.r_has ? '' : 'no-real' }}" href="{{ r.task_url }}" style="--pf-state-color:{{ r.state.color ?: '#4c7cf3' }}" title="{{ r.name }}{% if r.g_has_plan %} · planejado {{ r.g_range }}{% endif %}{% if r.r_has %} · real {{ r.r_range }}{% endif %} · {{ r.percent_done }}%">
                 <div class="pf-gx-label" style="--pf-depth:{{ r.depth }}">
                   {% if r.depth > 0 %}<i class="ti ti-corner-down-right pf-gx-elbow"></i>{% endif %}
                   <span class="pf-column-dot" style="--pf-state-color:{{ r.state.color }}"></span>
                   <span class="pf-gx-name">{{ r.name }}</span>
-                  {% if r.is_overdue and r.g_late_days > 0 %}<em class="pf-gx-late-tag">{{ r.g_late_days }}d atraso</em>{% endif %}
-                  <small>{{ r.is_milestone ? 'marco' : r.g_days ~ 'd' }}</small>
+                  {% if r.is_overdue and r.g_late_days > 0 %}<em class="pf-gx-late-tag pf-gx-only-plan">{{ r.g_late_days }}d atraso</em>{% endif %}
+                  {% if r.r_var_days is not null %}<em class="pf-gx-var pf-gx-only-real {{ r.r_var_days > 0 ? 'is-late' : (r.r_var_days < 0 ? 'is-early' : 'is-ontime') }}" title="Fim real em relação à data limite">{{ r.r_var_days > 0 ? '+' ~ r.r_var_days ~ 'd' : (r.r_var_days < 0 ? r.r_var_days ~ 'd' : 'no prazo') }}</em>{% endif %}
+                  <small class="pf-gx-only-plan">{{ r.is_milestone ? 'marco' : (r.g_has_plan ? r.g_days ~ 'd' : '—') }}</small>
+                  <small class="pf-gx-only-real">{{ r.r_has ? (r.is_milestone ? 'marco' : r.r_days ~ 'd') : '—' }}</small>
                 </div>
                 <div class="pf-gx-track">
+                  {% if r.r_has %}
+                    {% if r.r_milestone %}
+                      <span class="pf-gx-rmilestone" style="left:{{ r.r_left }}%"></span>
+                    {% else %}
+                      <span class="pf-gx-real {{ r.r_ongoing ? 'is-open' : '' }}" style="left:{{ r.r_left }}%;width:{{ r.r_width }}%">{% if not r.r_ongoing %}<b class="ti ti-check"></b>{% endif %}</span>
+                    {% endif %}
+                    <span class="pf-gx-cap pf-gx-rcap {{ r.r_label_left ? 'is-left' : '' }}" style="{{ r.r_label_left ? 'right:calc(' ~ (100 - r.r_left) ~ '% + 8px)' : 'left:calc(' ~ (r.r_left + r.r_width) ~ '% + ' ~ (r.r_milestone ? 16 : 8) ~ 'px)' }}">{{ r.r_range }}{% if r.r_start_var %} · início {{ r.r_start_var > 0 ? '+' ~ r.r_start_var : r.r_start_var }}d{% endif %}</span>
+                  {% else %}
+                    <span class="pf-gx-cap pf-gx-rcap pf-gx-none" style="left:8px">Não iniciada</span>
+                  {% endif %}
+                  {% if not r.g_has_plan %}<span class="pf-gx-cap pf-gx-pcap pf-gx-none" style="left:8px">Sem datas planejadas</span>{% endif %}
                   {% if r.g_late_left is not null %}<span class="pf-gx-late" style="left:{{ r.g_late_left }}%;width:{{ r.g_late_width }}%"></span>{% endif %}
-                  {% if r.is_milestone %}
+                  {% if not r.g_has_plan %}
+                  {% elseif r.is_milestone %}
                     <span class="pf-gx-milestone" style="left:{{ r.g_left }}%"></span>
-                    <span class="pf-gx-cap {{ r.g_label_left ? 'is-left' : '' }}" style="{{ r.g_label_left ? 'right:calc(' ~ (100 - r.g_left) ~ '% + 16px)' : 'left:calc(' ~ r.g_left ~ '% + 16px)' }}">{{ r.g_range }}</span>
+                    <span class="pf-gx-cap pf-gx-pcap {{ r.g_label_left ? 'is-left' : '' }}" style="{{ r.g_label_left ? 'right:calc(' ~ (100 - r.g_left) ~ '% + 16px)' : 'left:calc(' ~ r.g_left ~ '% + 16px)' }}">{{ r.g_range }}</span>
                   {% else %}
                     <span class="pf-gx-bar" style="left:{{ r.g_left }}%;width:{{ r.g_width }}%"><i style="width:{{ r.percent_done }}%"></i>{% if r.g_finished %}<b class="ti ti-check"></b>{% endif %}</span>
                     {% set cap_at = r.g_late_left is not null ? r.g_late_left + r.g_late_width : r.g_left + r.g_width %}
-                    <span class="pf-gx-cap {{ r.g_label_left ? 'is-left' : '' }}" style="{{ r.g_label_left ? 'right:calc(' ~ (100 - r.g_left) ~ '% + 8px)' : 'left:calc(' ~ cap_at ~ '% + 8px)' }}"><b>{{ r.percent_done }}%</b> {{ r.g_range }}</span>
+                    <span class="pf-gx-cap pf-gx-pcap {{ r.g_label_left ? 'is-left' : '' }}" style="{{ r.g_label_left ? 'right:calc(' ~ (100 - r.g_left) ~ '% + 8px)' : 'left:calc(' ~ cap_at ~ '% + 8px)' }}"><b>{{ r.percent_done }}%</b> {{ r.g_range }}</span>
                   {% endif %}
                 </div>
               </a>
@@ -229,21 +357,93 @@
       <section class="pf-panel mt-3"><div class="pf-panel-header"><h3>Lançamentos recentes</h3><span>Horas de execução são lançadas dentro da tarefa.</span></div><div class="table-responsive"><table class="table pf-table"><thead><tr><th>Data</th><th>Tipo</th><th>Profissional</th><th>Duração</th>{% if pf_valued %}<th class="text-end">Valor</th>{% endif %}<th>Descrição</th></tr></thead><tbody>{% for log in project.worklogs %}<tr><td>{{ log.work_date|date('d/m/Y') }}</td><td>{{ log.work_type == 'meeting' ? 'Reunião' : 'Execução' }}</td><td>{{ log.user_name }}</td><td><strong>{{ log.duration_label }}</strong></td>{% if pf_valued %}<td class="text-end text-nowrap">R$ {{ log.value_formatted|default('0,00') }}</td>{% endif %}<td>{{ log.comment ?: '—' }}</td></tr>{% else %}<tr><td colspan="{{ pf_valued ? 6 : 5 }}" class="text-muted">Nenhuma hora registrada.</td></tr>{% endfor %}</tbody></table></div></section>
       {% if pf_fin %}<section class="pf-panel mt-3"><div class="pf-panel-header"><div><div class="pf-eyebrow">VISÃO GERENCIAL</div><h3>Custos avulsos</h3></div><strong>R$ {{ project.costs.total_formatted }}</strong></div>
         <p class="text-muted small mb-2">Visível apenas para a gestão do projeto.{% if pf_valued %} Somam ao valor das horas (R$ {{ project.finance.hours_value_formatted }}) no custo total de R$ {{ project.finance.total_formatted }}.{% endif %}</p>
-        <div class="table-responsive"><table class="table pf-table"><thead><tr><th>Data</th><th>Descrição</th><th class="text-end">Valor</th><th></th></tr></thead><tbody>{% for cost in project.costs.items %}<tr><td>{{ cost.begin_date ? cost.begin_date|date('d/m/Y') : '—' }}</td><td>{{ cost.name }}{% if cost.comment %}<small class="d-block text-muted">{{ cost.comment }}</small>{% endif %}</td><td class="text-end text-nowrap"><strong>R$ {{ cost.cost_formatted }}</strong></td><td class="text-end">{% if project.can_add_cost %}<button type="button" class="btn btn-sm btn-ghost-danger pf-icon-btn pf-cost-remove" data-id="{{ cost.id }}" data-project-id="{{ project.id }}" title="Remover lançamento"><i class="ti ti-trash"></i></button>{% endif %}</td></tr>{% else %}<tr><td colspan="4" class="text-muted">Nenhum custo avulso lançado.</td></tr>{% endfor %}</tbody></table></div>
+        <div class="table-responsive"><table class="table pf-table"><thead><tr><th>Data</th><th>Descrição</th><th class="text-end">Valor</th><th></th></tr></thead><tbody>{% for cost in project.costs.items %}<tr><td>{{ cost.begin_date ? cost.begin_date|date('d/m/Y') : '—' }}</td><td>{{ cost.name }}{% if cost.task_id %} <a class="pf-cost-origin" href="{{ cost.task_url }}" title="Custo aprovado a partir de uma tarefa"><i class="ti ti-subtask"></i>tarefa #{{ cost.task_id }}</a>{% endif %}{% if cost.comment %}<small class="d-block text-muted">{{ cost.comment }}</small>{% endif %}</td><td class="text-end text-nowrap"><strong>R$ {{ cost.cost_formatted }}</strong></td><td class="text-end">{% if project.can_add_cost %}<button type="button" class="btn btn-sm btn-ghost-danger pf-icon-btn pf-cost-remove" data-id="{{ cost.id }}" data-project-id="{{ project.id }}" title="Remover lançamento"><i class="ti ti-trash"></i></button>{% endif %}</td></tr>{% else %}<tr><td colspan="4" class="text-muted">Nenhum custo avulso lançado.</td></tr>{% endfor %}</tbody></table></div>
         {% if project.can_add_cost %}<form class="pf-inline-form pf-cost-form mt-2"><input type="hidden" name="project_id" value="{{ project.id }}"><input type="date" name="begin_date" class="form-control" value="{{ 'now'|date('Y-m-d') }}" title="Data"><input name="name" class="form-control pf-grow" placeholder="Descrição (ex.: deslocamento, licença, material)" required><input name="cost" class="form-control pf-money-input" inputmode="decimal" placeholder="Valor (R$)" required><button class="btn btn-outline-primary"><i class="ti ti-plus"></i> Lançar</button></form>{% endif %}
       </section>{% endif %}
     </section>
 
+    {% if project.cost_approvals is not null %}
+    {% set ap = project.cost_approvals %}
+    <section class="pf-tab-pane" data-pf-pane="approvals">
+      <div class="pf-ap" data-task-endpoint="{{ ajax_task_url }}" data-csrf="{{ csrf_token }}">
+        <div class="pf-ap-head">
+          <div><div class="pf-eyebrow">GESTÃO FINANCEIRA</div><h2>Aprovações de custos</h2><p>Custos lançados pela equipe nas tarefas. Só os aprovados entram no financeiro do projeto (custos avulsos{{ project.finance.valued_hours ? ' e custo total' : '' }}).</p></div>
+        </div>
+        <div class="pf-ap-kpis">
+          <div class="pf-ap-kpi is-pending"><span><i class="ti ti-hourglass"></i></span><div><small>Aguardando</small><strong>{{ ap.pending }}</strong><em>R$ {{ ap.pending_total_formatted }}</em></div></div>
+          <div class="pf-ap-kpi is-approved"><span><i class="ti ti-circle-check"></i></span><div><small>Aprovado</small><strong>R$ {{ ap.approved_total_formatted }}</strong><em>já no financeiro</em></div></div>
+          <div class="pf-ap-kpi is-rejected"><span><i class="ti ti-circle-x"></i></span><div><small>Recusados</small><strong>{{ ap.rejected }}</strong><em>não contam</em></div></div>
+        </div>
+        <section class="pf-panel pf-ap-list">
+          <div class="pf-ap-toolbar">
+            <div class="pf-rp-seg" role="group" aria-label="Filtrar">
+              <button type="button" class="is-active" data-pf-ap-filter="pending"><i class="ti ti-hourglass"></i>Aguardando <em>{{ ap.pending }}</em></button>
+              <button type="button" data-pf-ap-filter="all"><i class="ti ti-list"></i>Todos <em>{{ ap.items|length }}</em></button>
+            </div>
+            <small class="text-muted">A equipe lança o custo em <strong>Responder ▾ › Adicionar custo</strong> dentro da tarefa.</small>
+          </div>
+          {% for c in ap.items %}
+            <article class="pf-ap-item is-{{ c.status }} {{ c.status == 'pending' ? '' : 'd-none' }}" data-pf-ap-status="{{ c.status }}" data-cost-id="{{ c.id }}">
+              <div class="pf-ap-main">
+                <div class="pf-ap-title"><strong>{{ c.name }}</strong><span class="pf-cost-status is-{{ c.status }}"><i class="ti ti-{{ {'pending':'hourglass','approved':'circle-check','rejected':'circle-x','removed':'trash'}[c.status] }}"></i>{{ c.status_label }}</span></div>
+                <div class="pf-ap-meta"><a href="{{ c.task_url }}"><i class="ti ti-subtask"></i>#{{ c.task_id }} · {{ c.task_name }}</a><span><i class="ti ti-user"></i>{{ c.user_name }}</span>{% if c.cost_date %}<span><i class="ti ti-calendar"></i>{{ c.cost_date|date('d/m/Y') }}</span>{% endif %}<span><i class="ti ti-clock"></i>lançado em {{ c.date_creation|date('d/m/Y H:i') }}</span></div>
+                {% if c.comment %}<p class="pf-ap-comment">{{ c.comment }}</p>{% endif %}
+                {% if c.status in ['approved','rejected'] %}<div class="pf-cost-decision"><i class="ti ti-gavel"></i>{{ c.status == 'approved' ? 'Aprovado' : 'Recusado' }} por {{ c.approver_name }}{% if c.decision_date %} em {{ c.decision_date|date('d/m/Y H:i') }}{% endif %}{% if c.decision_comment %}: {{ c.decision_comment }}{% endif %}</div>{% endif %}
+                {% if c.can_decide %}
+                  <div class="pf-cost-decide" data-cost-id="{{ c.id }}">
+                    <input class="form-control form-control-sm" maxlength="4000" placeholder="Comentário para a equipe (opcional; recomendado ao recusar)">
+                    <button type="button" class="btn btn-sm btn-success" data-pf-cost-decide="approve"><i class="ti ti-check"></i> Aprovar</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" data-pf-cost-decide="reject"><i class="ti ti-x"></i> Recusar</button>
+                  </div>
+                {% endif %}
+              </div>
+              <div class="pf-ap-side">
+                <strong class="pf-ap-value">R$ {{ c.cost_formatted }}</strong>
+                {% if c.can_delete %}<button type="button" class="btn btn-sm btn-ghost-danger pf-icon-btn pf-cost-delete" data-id="{{ c.id }}" title="{{ c.status == 'approved' ? 'Remover custo (sai também do financeiro do projeto)' : 'Remover custo' }}"><i class="ti ti-trash"></i></button>{% endif %}
+              </div>
+            </article>
+          {% endfor %}
+          <div class="pf-empty-state {{ ap.pending ? 'd-none' : '' }}" data-pf-ap-empty><i class="ti ti-circle-check"></i><strong>Nada aguardando aprovação</strong><p>Quando alguém da equipe lançar um custo numa tarefa, ele aparece aqui para você aprovar ou recusar.</p></div>
+        </section>
+      </div>
+    </section>
+    {% endif %}
     <section class="pf-tab-pane" data-pf-pane="meetings">
       <div class="pf-section-heading"><div><div class="pf-eyebrow">ALINHAMENTOS</div><h2>Reuniões</h2><p>Reunião não é tarefa. Registre aqui tempo, decisões e pendências.</p></div>{% if project.can_update %}<button class="btn btn-primary pf-meeting-new" data-bs-toggle="modal" data-bs-target="#pf-meeting-modal"><i class="ti ti-plus"></i> Nova reunião</button>{% endif %}</div>
       <div class="pf-meeting-list" id="pf-meeting-list">{% for meeting in project.meetings %}<article class="pf-panel pf-meeting-card"><div class="pf-meeting-date"><strong>{{ meeting.start_at|date('d') }}</strong><span>{{ ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][(meeting.start_at|date('n')) - 1] }}</span></div><div class="pf-meeting-body"><header><div><h3>{{ meeting.title }}</h3><span>{{ meeting.start_at|date('d/m/Y H:i') }} · {{ meeting.duration_label }} · {{ meeting.user_name }}</span></div>{% if project.can_update %}<div class="pf-meeting-actions"><button class="btn btn-sm btn-ghost-secondary pf-meeting-edit" type="button" data-bs-toggle="modal" data-bs-target="#pf-meeting-modal" data-id="{{ meeting.id }}" data-title="{{ meeting.title|e('html_attr') }}" data-start="{{ meeting.start_at|date('Y-m-d\\TH:i') }}" data-duration="{{ meeting.duration_minutes }}" data-participants="{{ meeting.participants|e('html_attr') }}" data-summary="{{ meeting.summary|e('html_attr') }}" data-decisions="{{ meeting.decisions|e('html_attr') }}" data-actions="{{ meeting.actions|e('html_attr') }}"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-ghost-danger pf-meeting-delete" type="button" data-id="{{ meeting.id }}"><i class="ti ti-trash"></i></button></div>{% endif %}</header>{% if meeting.participants %}<p><strong>Participantes:</strong> {{ meeting.participants }}</p>{% endif %}{% if meeting.summary %}<p><strong>Resumo:</strong> {{ meeting.summary }}</p>{% endif %}{% if meeting.decisions %}<p><strong>Decisões:</strong> {{ meeting.decisions }}</p>{% endif %}{% if meeting.actions %}<p><strong>Pendências:</strong> {{ meeting.actions }}</p>{% endif %}</div></article>{% else %}<div class="pf-empty-state"><i class="ti ti-calendar-off"></i><strong>Nenhuma reunião registrada</strong><p>Use esta área para separar alinhamentos da execução técnica.</p></div>{% endfor %}</div>
     </section>
 
     <section class="pf-tab-pane" data-pf-pane="weekly">
-      <div class="pf-section-heading"><div><div class="pf-eyebrow">CLIENTE</div><h2>Relatório semanal</h2><p>Consolida automaticamente tarefas, atividades, pontos de atenção, reuniões e horas da semana.</p></div></div>
-      <div class="pf-report-toolbar"><select class="form-select" id="pf-report-week">{% for week in weeks %}<option value="{{ week.start }}">{{ week.label }}</option>{% endfor %}</select><button class="btn btn-outline-primary" id="pf-report-generate" title="Relatório automático, sem IA"><i class="ti ti-refresh"></i> Gerar</button>{% if ai_enabled and project.can_update %}<select class="form-select pf-report-scope" id="pf-report-scope" title="Dados enviados para a IA"><option value="week">IA: semana selecionada</option><option value="project">IA: projeto inteiro</option></select><button class="btn btn-primary" id="pf-report-ai" title="Envia tarefas, comentários, execuções, reuniões e horas ao Gemini em uma única requisição"><i class="ti ti-sparkles"></i> Gerar com IA</button>{% endif %}<button class="btn btn-outline-secondary" id="pf-report-copy"><i class="ti ti-copy"></i> Copiar</button>{% if project.can_update %}<button class="btn btn-outline-primary" id="pf-report-save"><i class="ti ti-device-floppy"></i> Salvar versão</button>{% endif %}</div>
-      <section class="pf-panel pf-report-paper"><textarea id="pf-weekly-report-text" class="form-control" data-pf-lazy="1" placeholder="Selecione a semana e clique em Gerar. O relatório é montado automaticamente ao abrir esta aba.">{{ weekly_report.text }}</textarea><div class="pf-report-meta text-muted small" id="pf-report-meta"></div></section>
-      {% if saved_reports %}<section class="pf-panel mt-3"><div class="pf-panel-header"><h3>Versões salvas</h3></div><div class="pf-saved-reports">{% for report in saved_reports %}<button type="button" data-report-content="{{ report.content|e('html_attr') }}"><strong>{{ report.week_start|date('d/m') }} - {{ report.week_end|date('d/m/Y') }}</strong><span>{{ report.date_generation|date('d/m/Y H:i') }} · {{ report.user_name }}</span></button>{% endfor %}</div></section>{% endif %}
+      <div class="pf-rp" id="pf-rp">
+        <div class="pf-rp-top">
+          <div class="pf-sc-title"><div class="pf-eyebrow">CLIENTE</div><h2>Relatório de status</h2><p class="pf-rp-lead">Montado com os dados do projeto: status, entregas, andamento, riscos, reuniões, horas e próximos passos.{% if ai_enabled and project.can_update %} Com <strong>Gerar com IA</strong>, o Gemini escreve a análise executiva sobre esses mesmos números.{% endif %}</p></div>
+        </div>
+        <div class="pf-rp-toolbar">
+          <div class="pf-rp-controls">
+            <div class="pf-rp-seg" role="group" aria-label="Período do relatório">
+              <button type="button" class="is-active" data-pf-rp-scope="week"><i class="ti ti-calendar-week"></i>Semana</button>
+              <button type="button" data-pf-rp-scope="project"><i class="ti ti-folders"></i>Projeto inteiro</button>
+            </div>
+            <select class="form-select" id="pf-report-week" aria-label="Semana">{% for week in weeks %}<option value="{{ week.start }}">{{ week.current|default(false) ? 'Esta semana · ' : '' }}{{ week.label }}</option>{% endfor %}</select>
+          </div>
+          <div class="pf-rp-actions">
+            <button class="btn btn-outline-secondary" id="pf-report-generate" title="Atualizar com os dados atuais (sem IA)"><i class="ti ti-refresh"></i> Atualizar</button>
+            {% if ai_enabled and project.can_update %}<button class="btn pf-rp-ai-btn" id="pf-report-ai" title="O Gemini escreve título, resumo, riscos com ação recomendada e próximos passos sobre os números do sistema"><i class="ti ti-sparkles"></i> Gerar com IA</button>{% endif %}
+            <span class="pf-rp-divider"></span>
+            <button class="btn btn-ghost-secondary" id="pf-report-copy" title="Copia com formatação para colar no e-mail"><i class="ti ti-mail-forward"></i> Copiar para e-mail</button>
+            <button class="btn btn-ghost-secondary" id="pf-report-print" title="Imprimir ou salvar em PDF"><i class="ti ti-printer"></i> PDF</button>
+            <button class="btn btn-ghost-secondary" id="pf-report-edit" title="Editar o texto antes de enviar"><i class="ti ti-pencil"></i> <span>Editar texto</span></button>
+            {% if project.can_update %}<button class="btn btn-ghost-secondary" id="pf-report-save" title="Guardar esta versão no projeto"><i class="ti ti-device-floppy"></i> Salvar versão</button>{% endif %}
+          </div>
+        </div>
+        <div class="pf-rp-progress d-none" id="pf-rp-progress"><div class="pf-rp-progress-icon"><i class="ti ti-sparkles"></i></div><ol><li>Consolidando os dados do projeto</li><li>Analisando riscos e prioridades com IA</li><li>Montando o relatório</li></ol></div>
+        <article class="pf-rp-doc" id="pf-rp-doc"><div class="pf-rp-loading"><i class="ti ti-loader-2 pf-spin"></i> Montando o relatório…</div></article>
+        <textarea id="pf-weekly-report-text" class="form-control pf-rp-text d-none" data-pf-lazy="1" spellcheck="true">{{ weekly_report.text }}</textarea>
+        <div class="pf-rp-meta" id="pf-report-meta"></div>
+        {% if saved_reports %}
+        <section class="pf-rp-saved"><h3><i class="ti ti-history"></i>Versões salvas</h3><div class="pf-saved-reports">{% for report in saved_reports %}<button type="button" data-report-content="{{ report.content|e('html_attr') }}"><strong>{{ report.week_start|date('d/m') }} - {{ report.week_end|date('d/m/Y') }}</strong><span>{{ report.date_generation|date('d/m/Y H:i') }} · {{ report.user_name }}</span><em class="pf-rp-saved-tag is-{{ report.source }}">{{ report.source == 'ai' ? 'IA' : (report.source == 'auto' ? 'Automático' : 'Texto') }}</em></button>{% endfor %}</div></section>
+        {% endif %}
+      </div>
     </section>
 
     <section class="pf-tab-pane" data-pf-pane="team">
@@ -281,6 +481,11 @@
       {% endif %}
     </section>
 
+    {% if not project.is_template %}
+    <section class="pf-tab-pane" data-pf-pane="workload">
+      <div class="pf-wl" data-pf-workload data-lazy="1" data-endpoint="{{ ajax_workload_url }}" data-csrf="{{ csrf_token }}" data-focus-project="{{ project.id }}"></div>
+    </section>
+    {% endif %}
     <section class="pf-tab-pane" data-pf-pane="files">
       <div class="pf-files-grid">
         <section class="pf-panel"><div class="pf-panel-header"><div><div class="pf-eyebrow">CONTRATO</div><h2>Contrato do cliente</h2></div></div>

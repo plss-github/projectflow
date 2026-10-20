@@ -33,6 +33,11 @@
             <div class="input-group"><input class="form-control" type="number" min="1" max="60" name="health_due_soon_days" value="{{ health_due_soon_days }}"><span class="input-group-text">dias</span></div>
             <small class="text-muted">Usado pela saúde automática do projeto.</small>
           </div>
+          <div class="col-md-4">
+            <label class="form-label">Capacidade diária por pessoa</label>
+            <div class="input-group"><input class="form-control" type="number" min="0.5" max="24" step="0.5" name="workload_daily_hours" value="{{ workload_daily_hours }}"><span class="input-group-text">horas</span></div>
+            <small class="text-muted">Limite da Carga de trabalho. Dias úteis e feriados vêm do calendário do GLPI da entidade; vale o menor entre o expediente do calendário e este valor.</small>
+          </div>
         </div>
       </section>
 

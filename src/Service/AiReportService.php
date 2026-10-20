@@ -5,36 +5,31 @@ namespace GlpiPlugin\Projectflow\Service;
 use GlpiPlugin\Projectflow\Config;
 use GLPIKey;
 use Project;
-use ProjectTask;
 use RuntimeException;
 use Throwable;
 
 /**
- * Project report written by Google Gemini.
+ * Executive narrative for the status report, written by Google Gemini.
  *
- * Everything the report needs (project, tasks, comments, executions, meetings, hours) is
- * gathered here and sent in ONE generateContent request. The API key is stored encrypted
- * (GLPIKey) and never reaches the browser.
+ * The plugin computes the report (WeeklyReportService::build): status, KPIs, deliveries, work
+ * in progress, risks, meetings, next steps. Only a compact fact sheet goes to the model, which
+ * returns a small JSON (headline, summary, highlights, risks with action, prioritized next steps,
+ * what the client must decide). Numbers on screen always come from the plugin.
+ *
+ * Speed: small prompt, short structured answer, low "thinking" budget and a cache keyed by the
+ * facts (same data = instant answer). The API key is stored encrypted (GLPIKey).
  */
 class AiReportService
 {
     public const DEFAULT_MODEL = 'gemini-3.8-flash';
     public const DEFAULT_FALLBACK_MODEL = 'gemini-3.5-flash';
-    /** HTTP statuses that mean "try again": rate limit, overload, gateway errors. */
+    private const PROMPT_VERSION = 'v2.1';
     private const RETRYABLE = [429, 500, 502, 503, 504];
-    /** Waits (seconds) before the 2nd and 3rd attempts of the same model. */
-    private const RETRY_DELAYS = [2, 6];
+    private const RETRY_DELAYS = [2, 5];
     private const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-    private const MAX_TEXT = 2000;
-    private const MAX_TASKS = 300;
-    private const MAX_ITEMS_PER_TASK = 60;
 
     public function __construct(
-        private readonly TaskService $tasks = new TaskService(),
-        private readonly ActivityService $activities = new ActivityService(),
-        private readonly WorklogService $worklogs = new WorklogService(),
-        private readonly MeetingService $meetings = new MeetingService(),
-        private readonly ProjectService $projects = new ProjectService(),
+        private readonly WeeklyReportService $reports = new WeeklyReportService(),
     ) {}
 
     // ---------------------------------------------------------------- configuration
@@ -67,14 +62,12 @@ class AiReportService
         return preg_match('/^[A-Za-z0-9._-]{3,80}$/', $model) ? $model : self::DEFAULT_MODEL;
     }
 
-    /** Optional second model, used when the main one stays overloaded after the retries. */
     public static function getFallbackModel(): string
     {
         $model = trim((string) Config::get('ai_gemini_fallback_model', self::DEFAULT_FALLBACK_MODEL));
         return preg_match('/^[A-Za-z0-9._-]{3,80}$/', $model) ? $model : '';
     }
 
-    /** Check the key/model and return the models that support generateContent. */
     public function testConnection(?string $key = null, ?string $model = null): array
     {
         $key = trim((string) ($key ?: self::getApiKey()));
@@ -94,201 +87,247 @@ class AiReportService
     // ---------------------------------------------------------------- report
 
     /**
-     * @param string $scope 'week' (period = week of $weekStart) or 'project' (whole history)
+     * @param string $scope 'week' or 'project'
+     * @return array the structured report (WeeklyReportService format) with the AI narrative merged in
      */
-    public function generate(int $projectId, string $scope, ?string $weekStart): array
+    public function generate(int $projectId, string $scope, ?string $weekStart, bool $force = false): array
     {
         if (!self::isEnabled()) throw new RuntimeException('A geração por IA não está configurada. Informe a chave do Gemini nas Configurações do Project Flow.');
         $project = new Project();
         if (!$project->getFromDB($projectId) || !$project->can($projectId, UPDATE)) throw new RuntimeException('Sem permissão para gerar o relatório deste projeto.');
+        @set_time_limit(120);
+        $t0 = microtime(true);
 
-        @set_time_limit(180);
-        $payload = $this->collect($projectId, $scope === 'project' ? 'project' : 'week', $weekStart);
-        $body = [
-            'systemInstruction' => ['parts' => [['text' => $this->systemPrompt()]]],
-            'contents' => [[
-                'role' => 'user',
-                'parts' => [['text' => "Monte o relatório a partir destes dados (JSON):\n\n" . json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]],
-            ]],
-            'generationConfig' => ['temperature' => 0.3, 'maxOutputTokens' => 8192, 'responseMimeType' => 'text/plain'],
-        ];
+        $data = $this->reports->build($projectId, $scope === 'project' ? 'project' : 'week', $weekStart);
+        if ($data === null) throw new RuntimeException('Projeto não encontrado.');
+        $facts = $this->facts($data);
         $model = self::getModel();
-        $fallback = self::getFallbackModel();
-        $attempts = [];
-        try {
-            $response = $this->request('POST', self::API_BASE . '/models/' . rawurlencode($model) . ':generateContent', self::getApiKey(), $body, $attempts);
-        } catch (RuntimeException $e) {
-            // Still overloaded after the retries: try the fallback model once (same payload).
-            if (!$this->isRetryable($e) || $fallback === '' || $fallback === $model) {
-                throw $this->friendly($e, $model);
-            }
-            try {
-                $response = $this->request('POST', self::API_BASE . '/models/' . rawurlencode($fallback) . ':generateContent', self::getApiKey(), $body, $attempts);
-                $model = $fallback;
-            } catch (RuntimeException $e2) {
-                throw $this->friendly($e2, $model . ' e ' . $fallback);
-            }
-        }
+        $cacheKey = sha1(self::PROMPT_VERSION . '|' . $model . '|' . trim((string) Config::get('ai_instructions', '')) . '|' . json_encode($facts, JSON_UNESCAPED_UNICODE));
 
-        if (!empty($response['promptFeedback']['blockReason'])) {
-            throw new RuntimeException('O Gemini bloqueou a solicitação (' . $response['promptFeedback']['blockReason'] . ').');
+        $meta = ['cached' => false, 'attempts' => 0, 'used_fallback' => false, 'tokens_in' => 0, 'tokens_out' => 0, 'model' => $model];
+        $ai = $force ? null : $this->cacheGet($cacheKey);
+        if ($ai !== null) {
+            $meta = ['cached' => true] + $ai['_meta'] + $meta;
+        } else {
+            $ai = $this->ask($facts, $meta);
+            $ai['_meta'] = array_intersect_key($meta, array_flip(['model', 'tokens_in', 'tokens_out', 'used_fallback']));
+            $this->cachePut($cacheKey, $ai);
         }
-        $candidate = $response['candidates'][0] ?? null;
-        $text = '';
-        foreach ((array) ($candidate['content']['parts'] ?? []) as $part) $text .= (string) ($part['text'] ?? '');
-        $text = trim($text);
-        if ($text === '') throw new RuntimeException('O Gemini não retornou texto (' . ($candidate['finishReason'] ?? 'sem motivo informado') . ').');
-
-        return [
-            'text' => $text,
-            'model' => $model,
-            'finish_reason' => (string) ($candidate['finishReason'] ?? ''),
-            'tokens_in' => (int) ($response['usageMetadata']['promptTokenCount'] ?? 0),
-            'tokens_out' => (int) ($response['usageMetadata']['candidatesTokenCount'] ?? 0),
-            'period' => $payload['periodo'],
-            'attempts' => count($attempts),
-            'used_fallback' => $model === $fallback && $model !== self::getModel(),
-        ];
+        $data = $this->merge($data, $ai);
+        $data['source'] = 'ai';
+        $data['ai'] = $meta + ['ms' => (int) round((microtime(true) - $t0) * 1000)];
+        $data['text'] = $this->reports->renderText($data);
+        return $data;
     }
 
-    /** Gather every piece of project information for a single prompt. */
-    public function collect(int $projectId, string $scope, ?string $weekStart): array
+    /** Compact fact sheet: only what an executive summary needs, in Portuguese keys. */
+    private function facts(array $d): array
     {
-        [$start, $end] = $scope === 'week' ? $this->weekRange($weekStart) : [null, null];
-        $inPeriod = static function (?string $date) use ($start, $end): bool {
-            if ($start === null) return true;
-            $d = substr((string) $date, 0, 10);
-            return $d >= $start && $d <= $end;
-        };
-
-        $p = $this->projects->getProject($projectId) ?? [];
-        $totalHours = $this->worklogs->getSummary($projectId);
-        $periodHours = $start ? $this->worklogs->getSummary($projectId, $start, $end) : $totalHours;
-        $budget = (int) ($p['hours_budget_minutes'] ?? 0);
-
-        $allMeetings = $this->meetings->getForProject($projectId, 500);
-        $meetingsByTask = [];
-        $projectMeetings = [];
-        foreach ($allMeetings as $m) {
-            if (!$inPeriod($m['start_at'] ?? null)) continue;
-            $row = [
-                'data' => $m['start_at'], 'titulo' => $m['title'], 'duracao' => $m['duration_label'],
-                'registrado_por' => $m['user_name'], 'participantes' => $this->cut($m['participants']),
-                'resumo' => $this->cut($m['summary']), 'decisoes' => $this->cut($m['decisions']), 'pendencias' => $this->cut($m['actions']),
-            ];
-            if ((int) $m['task_id'] > 0) $meetingsByTask[(int) $m['task_id']][] = $row; else $projectMeetings[] = $row;
-        }
-
-        $taskHours = $this->worklogs->getTaskTotals($projectId);
-        $tasks = [];
-        foreach (array_slice($this->tasks->getProjectTasks($projectId), 0, self::MAX_TASKS) as $t) {
-            $id = (int) $t['id'];
-            $comments = [];
-            foreach ($this->activities->getForTask($id, 500) as $a) {
-                if (!$inPeriod($a['date_creation'] ?? null)) continue;
-                $comments[] = ['data' => $a['date_creation'], 'autor' => $a['user_name'], 'texto' => $this->cut($a['content'])];
-            }
-            $executions = [];
-            foreach ($this->worklogs->getForTask($id, 500) as $w) {
-                if (!$inPeriod($w['work_date'] ?? null)) continue;
-                $executions[] = ['data' => $w['work_date'], 'profissional' => $w['user_name'], 'duracao' => $w['duration_label'], 'descricao' => $this->cut($w['comment'])];
-            }
-            $modified = substr((string) ($t['date_mod'] ?? ''), 0, 10);
-            $touched = $start === null || $comments || $executions || !empty($meetingsByTask[$id]) || ($modified !== '' && $inPeriod($modified));
-            $h = $taskHours[$id] ?? null;
-            $tasks[] = [
-                'id' => $id,
-                'nome' => $t['name'],
-                'tarefa_pai' => $t['parent_name'] ?: null,
-                'estado' => $t['state']['name'] ?? '',
-                'finalizada' => !empty($t['state']['is_finished']) || (int) $t['percent_done'] >= 100,
-                'andamento_percentual' => (int) $t['percent_done'],
-                'prioridade' => $t['priority_name'],
-                'tipo' => $t['type_name'] ?: null,
-                'marco' => (bool) $t['is_milestone'],
-                'inicio_planejado' => $t['plan_start_date'],
-                'prazo' => $t['plan_end_date'],
-                'atrasada' => (bool) $t['is_overdue'],
-                'ponto_de_atencao' => $t['attention'] ? ($t['attention_note'] ?: true) : false,
-                'solicitante' => $t['requester_name'],
-                'executores' => array_column($t['team_summary'] ?? [], 'name'),
-                'descricao' => $this->cut($t['content']),
-                'horas_previstas' => $t['planned_duration_hours'] ?: null,
-                'horas_total' => $h['total_label'] ?? '0h',
-                'horas_execucao_total' => $h['execution_label'] ?? '0h',
-                'horas_reuniao_total' => $h['meeting_label'] ?? '0h',
-                'movimentada_no_periodo' => $touched,
-                'ultima_alteracao' => $t['date_mod'],
-                'comentarios' => array_slice($comments, 0, self::MAX_ITEMS_PER_TASK),
-                'execucoes' => array_slice($executions, 0, self::MAX_ITEMS_PER_TASK),
-                'reunioes' => array_slice($meetingsByTask[$id] ?? [], 0, self::MAX_ITEMS_PER_TASK),
-            ];
-        }
-
+        $k = $d['kpis'];
+        $status = ['no_prazo' => 'no prazo', 'atencao' => 'atenção', 'critico' => 'crítico'][$d['status']] ?? $d['status'];
         return [
-            'periodo' => $start ? ['tipo' => 'semana', 'inicio' => $start, 'fim' => $end] : ['tipo' => 'projeto_inteiro'],
-            'gerado_em' => date('Y-m-d H:i'),
-            'projeto' => [
-                'nome' => $p['name'] ?? '', 'codigo' => $p['code'] ?? '', 'objetivo' => $this->cut($p['objective'] ?? ''),
-                'descricao' => $this->cut($p['content'] ?? ''), 'estado' => $p['state']['name'] ?? '', 'andamento_percentual' => (int) ($p['percent_done'] ?? 0),
-                'saude' => $p['health_effective'] ?? '', 'risco' => $p['risk_level'] ?? '', 'prioridade' => $p['priority_name'] ?? '',
-                'inicio_planejado' => $p['plan_start_date'] ?? null, 'prazo' => $p['plan_end_date'] ?? null, 'atrasado' => (bool) ($p['is_overdue'] ?? false),
-                'responsavel' => $p['manager_name'] ?? '', 'grupo' => $p['group_name'] ?? '', 'patrocinador' => $p['sponsor'] ?? '', 'portfolio' => $p['portfolio'] ?? '',
-                'contabilizacao' => ProjectService::costModeLabel((string) ($p['cost_mode'] ?? 'hours')),
-            ],
-            'horas' => [
-                'periodo' => ['execucao' => $periodHours['execution_label'], 'reunioes' => $periodHours['meeting_label'], 'total' => $periodHours['total_label']],
-                'acumulado_projeto' => ['execucao' => $totalHours['execution_label'], 'reunioes' => $totalHours['meeting_label'], 'total' => $totalHours['total_label']],
-                'previstas_projeto' => $budget > 0 ? WorklogService::formatMinutes($budget) : null,
-                'saldo' => $budget > 0 ? WorklogService::formatMinutes(max(0, $budget - (int) $totalHours['total_minutes'])) : null,
-                'excedente' => $budget > 0 && $totalHours['total_minutes'] > $budget ? WorklogService::formatMinutes($totalHours['total_minutes'] - $budget) : null,
-            ],
-            'reunioes_do_projeto' => $projectMeetings,
-            'tarefas' => $tasks,
+            'periodo' => $d['scope'] === 'week' ? 'semana de ' . $d['period_label'] : 'projeto inteiro',
+            'hoje' => date('Y-m-d'),
+            'projeto' => array_filter([
+                'nome' => $d['project']['name'], 'estado' => $d['project']['state'], 'status_calculado' => $status,
+                'prazo' => $d['project']['deadline'], 'gerente' => $d['project']['manager'], 'objetivo' => $d['project']['objective'] ?: null,
+                'risco_declarado' => $d['project']['risk_level'],
+            ], static fn($v) => $v !== null && $v !== ''),
+            'indicadores' => array_filter([
+                'andamento' => $k['progress'] . '%', 'tarefas_concluidas' => $k['tasks_done'] . '/' . $k['tasks_total'],
+                'entregas_no_periodo' => $d['scope'] === 'week' ? $k['delivered_period'] : null,
+                'em_atraso' => $k['overdue'], 'pontos_de_atencao' => $k['attention'],
+                'horas_periodo' => $d['scope'] === 'week' ? $k['hours_period'] . ' (exec ' . $k['hours_period_exec'] . ', reuniões ' . $k['hours_period_meet'] . ')' : null,
+                'horas_acumuladas' => $k['hours_total'], 'horas_previstas' => $k['hours_budget'], 'consumo_horas' => $k['hours_budget_pct'] !== null ? $k['hours_budget_pct'] . '%' : null,
+            ], static fn($v) => $v !== null),
+            'entregas' => array_map(static fn($x) => array_filter(['tarefa' => $x['name'], 'concluida_em' => $x['date'], 'dias_vs_prazo' => $x['variance_days'], 'marco' => $x['milestone'] ?: null], static fn($v) => $v !== null), $d['delivered']),
+            'em_andamento' => array_map(static fn($x) => array_filter([
+                'tarefa' => $x['name'], 'andamento' => $x['percent'] . '%', 'estado' => $x['state'], 'prazo' => $x['deadline'], 'atrasada' => $x['late'] ?: null,
+                'responsavel' => $x['owner'] ?: null, 'horas_no_periodo' => $x['hours'],
+                'registros' => array_map(static fn($n) => $n['text'], $x['notes']) ?: null,
+            ], static fn($v) => $v !== null), $d['progress']),
+            'riscos_detectados' => array_map(static fn($r) => $r['title'] . ' — ' . $r['detail'], $d['risks']),
+            'reunioes' => array_map(static fn($m) => array_filter(['data' => $m['date'], 'titulo' => $m['title'], 'resumo' => $m['summary'] ?: null, 'decisoes' => $m['decisions'] ?: null, 'pendencias' => $m['actions'] ?: null]), $d['meetings']),
+            'proximas_tarefas' => array_map(static fn($n) => array_filter(['tarefa' => $n['name'], 'responsavel' => $n['owner'] ?: null, 'prazo' => $n['deadline'], 'atrasada' => $n['late'] ?: null]), $d['next_steps']),
         ];
     }
 
     private function systemPrompt(): string
     {
         $base = <<<TXT
-Você é o PMO de uma consultoria de TI e escreve relatórios de acompanhamento de projeto para gestores e clientes, em português do Brasil.
-Use SOMENTE os dados recebidos. Não invente tarefas, números, datas, pessoas ou decisões. Se uma informação não existir, diga que não há registro.
-Quando o período for uma semana, trate como "no período" apenas o que tem data dentro dele; o restante é contexto.
-Formato: texto simples (sem Markdown, sem tabelas, sem asteriscos), títulos em MAIÚSCULAS, itens com "• ". Seja objetivo.
-Estrutura:
-RELATÓRIO DE ACOMPANHAMENTO - <nome do projeto>
-Período: <período> · Andamento geral: <x>%
-RESUMO EXECUTIVO (3 a 5 frases: situação, avanço, principal risco)
-ENTREGAS CONCLUÍDAS
-EM ANDAMENTO (o que avançou, com base nos comentários e execuções)
-REUNIÕES E DECISÕES (decisões e pendências das reuniões)
-PONTOS DE ATENÇÃO E RISCOS (atrasos, pontos de atenção, estouro de horas, bloqueios citados)
-HORAS (execução, reuniões e total do período; acumulado, previsto e saldo/excedente quando houver)
-PRÓXIMOS PASSOS (tarefas em aberto por prazo, pendências das reuniões)
-Cite as tarefas pelo nome. Não exponha IDs internos nem e-mails.
+Você é um PMO sênior de uma consultoria de TI. Escreva a parte narrativa de um relatório de status para diretoria e cliente, em português do Brasil.
+Regras:
+- Use SOMENTE os fatos recebidos. Não invente tarefas, datas, pessoas, números ou decisões. Sem dado, não comente.
+- Seja executivo: frases curtas, foco em impacto no prazo/escopo/esforço e no que precisa ser feito. Nada de listar tudo que existe.
+- Não repita os indicadores um a um (eles já aparecem no relatório); use números só quando sustentam uma conclusão.
+- "titulo": uma frase de até 110 caracteres com a situação real do projeto.
+- "resumo": 2 a 4 frases: situação, o que avançou de relevante, principal risco e o encaminhamento.
+- "destaques": até 4 conquistas/avanços concretos do período (vazio se não houver).
+- "riscos": até 4, os mais relevantes, cada um com impacto e uma ação recomendada objetiva (verbo no infinitivo); "severidade" alta, media ou baixa.
+- "proximos_passos": até 6 ações priorizadas (tarefas próximas do prazo, atrasadas e pendências de reunião), com responsável e prazo quando existirem nos dados.
+- "decisoes_cliente": o que depende de decisão, validação ou apoio do cliente, só se os dados indicarem (vazio se não houver).
+- Cite tarefas pelo nome. Não use Markdown, IDs internos nem e-mails.
 TXT;
         $extra = trim((string) Config::get('ai_instructions', ''));
         return $extra !== '' ? $base . "\n\nInstruções adicionais da empresa:\n" . $extra : $base;
     }
 
-    // ---------------------------------------------------------------- helpers
-
-    private function cut(mixed $text): string
+    private function schema(): array
     {
-        $text = trim(preg_replace('/\s+/u', ' ', strip_tags((string) $text)) ?? '');
-        return mb_strlen($text) > self::MAX_TEXT ? mb_substr($text, 0, self::MAX_TEXT) . '…' : $text;
+        $str = ['type' => 'STRING'];
+        return [
+            'type' => 'OBJECT',
+            'properties' => [
+                'titulo' => $str,
+                'resumo' => $str,
+                'destaques' => ['type' => 'ARRAY', 'items' => $str],
+                'riscos' => ['type' => 'ARRAY', 'items' => ['type' => 'OBJECT', 'properties' => [
+                    'titulo' => $str, 'impacto' => $str, 'acao' => $str, 'severidade' => ['type' => 'STRING', 'enum' => ['alta', 'media', 'baixa']],
+                ], 'required' => ['titulo', 'impacto', 'acao', 'severidade']]],
+                'proximos_passos' => ['type' => 'ARRAY', 'items' => ['type' => 'OBJECT', 'properties' => [
+                    'acao' => $str, 'responsavel' => $str, 'prazo' => $str,
+                ], 'required' => ['acao']]],
+                'decisoes_cliente' => ['type' => 'ARRAY', 'items' => $str],
+            ],
+            'required' => ['titulo', 'resumo', 'destaques', 'riscos', 'proximos_passos', 'decisoes_cliente'],
+        ];
     }
 
-    private function weekRange(?string $value): array
+    /** One Gemini call (main model, then fallback when overloaded). Degrades features the model rejects. */
+    private function ask(array $facts, array &$meta): array
     {
+        $model = self::getModel();
+        $fallback = self::getFallbackModel();
+        $attempts = [];
         try {
-            $d = trim((string) $value) !== '' ? new \DateTimeImmutable((string) $value) : new \DateTimeImmutable('today');
-        } catch (Throwable) {
-            $d = new \DateTimeImmutable('today');
+            [$response, $usedModel] = [$this->callModel($model, $facts, $attempts), $model];
+        } catch (RuntimeException $e) {
+            if (!$this->isRetryable($e) || $fallback === '' || $fallback === $model) throw $this->friendly($e, $model);
+            try {
+                [$response, $usedModel] = [$this->callModel($fallback, $facts, $attempts), $fallback];
+                $meta['used_fallback'] = true;
+            } catch (RuntimeException $e2) {
+                throw $this->friendly($e2, $model . ' e ' . $fallback);
+            }
         }
-        $monday = $d->modify('monday this week');
-        return [$monday->format('Y-m-d'), $monday->modify('+6 days')->format('Y-m-d')];
+        $meta['attempts'] = count($attempts);
+        $meta['model'] = $usedModel;
+        $meta['tokens_in'] = (int) ($response['usageMetadata']['promptTokenCount'] ?? 0);
+        $meta['tokens_out'] = (int) ($response['usageMetadata']['candidatesTokenCount'] ?? 0);
+        if (!empty($response['promptFeedback']['blockReason'])) {
+            throw new RuntimeException('O Gemini bloqueou a solicitação (' . $response['promptFeedback']['blockReason'] . ').');
+        }
+        $candidate = $response['candidates'][0] ?? null;
+        $text = '';
+        foreach ((array) ($candidate['content']['parts'] ?? []) as $part) {
+            if (!empty($part['thought'])) continue;
+            $text .= (string) ($part['text'] ?? '');
+        }
+        $json = $this->parseJson($text);
+        if ($json === null) throw new RuntimeException('O Gemini não retornou um relatório válido (' . ($candidate['finishReason'] ?? 'sem motivo informado') . '). Tente gerar de novo.');
+        return $json;
     }
+
+    /**
+     * Calls a model with structured output and a small thinking budget. Models that reject the
+     * thinking config or the schema are remembered (Config) and called without them next time.
+     */
+    private function callModel(string $model, array $facts, array &$attempts): array
+    {
+        $caps = (array) json_decode((string) Config::get('ai_model_caps', '{}'), true);
+        $cap = (array) ($caps[$model] ?? []);
+        for ($round = 0; $round < 3; $round++) {
+            $gen = ['temperature' => 0.2, 'maxOutputTokens' => 3072, 'responseMimeType' => 'application/json'];
+            if (empty($cap['no_schema'])) $gen['responseSchema'] = $this->schema();
+            if (empty($cap['no_thinking'])) $gen['thinkingConfig'] = ['thinkingBudget' => 512];
+            $body = [
+                'systemInstruction' => ['parts' => [['text' => $this->systemPrompt()]]],
+                'contents' => [['role' => 'user', 'parts' => [['text' => "Fatos do projeto (JSON):\n" . json_encode($facts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                    . (empty($cap['no_schema']) ? '' : "\n\nResponda SOMENTE com um JSON com as chaves: titulo, resumo, destaques[], riscos[{titulo,impacto,acao,severidade}], proximos_passos[{acao,responsavel,prazo}], decisoes_cliente[].")]]]],
+                'generationConfig' => $gen,
+            ];
+            try {
+                return $this->request('POST', self::API_BASE . '/models/' . rawurlencode($model) . ':generateContent', self::getApiKey(), $body, $attempts);
+            } catch (RuntimeException $e) {
+                if ($e->getCode() !== 400) throw $e;
+                $msg = mb_strtolower($e->getMessage());
+                if (empty($cap['no_thinking']) && str_contains($msg, 'think')) $cap['no_thinking'] = true;
+                elseif (empty($cap['no_schema']) && (str_contains($msg, 'schema') || str_contains($msg, 'mime') || str_contains($msg, 'json'))) $cap['no_schema'] = true;
+                else throw $e;
+                $caps[$model] = $cap;
+                Config::set('ai_model_caps', json_encode($caps));
+            }
+        }
+        throw new RuntimeException('O modelo ' . $model . ' recusou a solicitação.');
+    }
+
+    private function parseJson(string $text): ?array
+    {
+        $text = trim($text);
+        $text = preg_replace('/^```(?:json)?\s*|\s*```$/', '', $text) ?? $text;
+        $json = json_decode($text, true);
+        if (!is_array($json) && preg_match('/\{.*\}/s', $text, $m)) $json = json_decode($m[0], true);
+        return is_array($json) && isset($json['resumo']) ? $json : null;
+    }
+
+    /** AI narrative over the plugin facts. Numbers and lists of record stay the plugin's. */
+    private function merge(array $d, array $ai): array
+    {
+        $s = static fn($v, int $max = 600): string => mb_substr(trim(strip_tags((string) $v)), 0, $max);
+        if ($s($ai['titulo'] ?? '') !== '') $d['headline'] = $s($ai['titulo'], 160);
+        if ($s($ai['resumo'] ?? '') !== '') $d['summary'] = $s($ai['resumo'], 1200);
+        $d['highlights'] = array_values(array_filter(array_map(fn($h) => $s($h, 300), array_slice((array) ($ai['destaques'] ?? []), 0, 5))));
+        $risks = [];
+        foreach (array_slice((array) ($ai['riscos'] ?? []), 0, 5) as $r) {
+            if (!is_array($r) || $s($r['titulo'] ?? '') === '') continue;
+            $sev = in_array($r['severidade'] ?? '', ['alta', 'media', 'baixa'], true) ? $r['severidade'] : 'media';
+            $risks[] = ['title' => $s($r['titulo'], 200), 'detail' => $s($r['impacto'] ?? '', 400), 'action' => $s($r['acao'] ?? '', 300), 'severity' => $sev];
+        }
+        if ($risks) $d['risks'] = $risks;
+        $steps = [];
+        foreach (array_slice((array) ($ai['proximos_passos'] ?? []), 0, 8) as $n) {
+            if (!is_array($n) || $s($n['acao'] ?? '') === '') continue;
+            $steps[] = ['action' => $s($n['acao'], 300), 'owner' => $s($n['responsavel'] ?? '', 120), 'deadline' => $this->dateOrText($s($n['prazo'] ?? '', 40)), 'late' => false];
+        }
+        if ($steps) $d['next_steps'] = $steps;
+        $d['client_asks'] = array_values(array_filter(array_map(fn($h) => $s($h, 300), array_slice((array) ($ai['decisoes_cliente'] ?? []), 0, 5))));
+        return $d;
+    }
+
+    private function dateOrText(string $v): ?string
+    {
+        if ($v === '' || in_array(mb_strtolower($v), ['-', '—', 'n/a', 'não informado', 'sem prazo'], true)) return null;
+        return preg_match('/^\d{4}-\d{2}-\d{2}/', $v) ? substr($v, 0, 10) : $v;
+    }
+
+    // ---------------------------------------------------------------- cache
+
+    private function cacheDir(): string
+    {
+        return GLPI_PLUGIN_DOC_DIR . '/projectflow/aicache';
+    }
+
+    private function cacheGet(string $key): ?array
+    {
+        $file = $this->cacheDir() . '/' . $key . '.json';
+        if (!is_file($file) || filemtime($file) < time() - 30 * 86400) return null;
+        $json = json_decode((string) @file_get_contents($file), true);
+        return is_array($json) && isset($json['_meta']) ? $json : null;
+    }
+
+    private function cachePut(string $key, array $value): void
+    {
+        $dir = $this->cacheDir();
+        if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) return;
+        @file_put_contents($dir . '/' . $key . '.json', json_encode($value, JSON_UNESCAPED_UNICODE));
+        $files = glob($dir . '/*.json') ?: [];
+        if (count($files) > 300) {
+            usort($files, static fn($a, $b) => filemtime($a) <=> filemtime($b));
+            foreach (array_slice($files, 0, count($files) - 300) as $f) @unlink($f);
+        }
+    }
+
+    // ---------------------------------------------------------------- HTTP
 
     private function isRetryable(RuntimeException $e): bool
     {
@@ -298,17 +337,12 @@ TXT;
     private function friendly(RuntimeException $e, string $models): RuntimeException
     {
         return match (true) {
-            in_array($e->getCode(), [503, 500, 502, 504], true) => new RuntimeException("O Gemini está sobrecarregado agora ({$models}). Já tentamos novamente algumas vezes; aguarde um ou dois minutos e gere de novo. Detalhe: " . $e->getMessage(), $e->getCode()),
-            $e->getCode() === 429 => new RuntimeException('Limite de uso da chave do Gemini atingido (cota por minuto ou por dia). Aguarde ou revise a cota/faturamento no Google AI Studio. Detalhe: ' . $e->getMessage(), 429),
+            in_array($e->getCode(), [503, 500, 502, 504], true) => new RuntimeException("O Gemini está sobrecarregado agora ({$models}). Já tentamos novamente; aguarde um minuto e gere de novo. Detalhe: " . $e->getMessage(), $e->getCode()),
+            $e->getCode() === 429 => new RuntimeException('Limite de uso da chave do Gemini atingido (cota por minuto ou por dia). Aguarde ou revise a cota no Google AI Studio. Detalhe: ' . $e->getMessage(), 429),
             default => $e,
         };
     }
 
-    /**
-     * HTTP call with GLPI's proxy settings. The key goes in a header, never in the URL.
-     * Retryable statuses are retried with a short backoff (Retry-After is honored, capped).
-     * The exception code carries the last HTTP status.
-     */
     private function request(string $method, string $url, string $key, ?array $body = null, array &$attempts = []): array
     {
         $delays = self::RETRY_DELAYS;
@@ -319,7 +353,7 @@ TXT;
             } catch (RuntimeException $e) {
                 if (!$this->isRetryable($e) || $delays === []) throw $e;
                 $wait = array_shift($delays);
-                if (!empty($retryAfter)) $wait = max($wait, min(10, (int) $retryAfter));
+                if (!empty($retryAfter)) $wait = max($wait, min(8, (int) $retryAfter));
                 sleep($wait);
             }
         }
@@ -332,12 +366,7 @@ TXT;
         if (!function_exists('curl_init')) throw new RuntimeException('A extensão PHP curl não está disponível no servidor.');
         $ch = curl_init($url);
         $headers = ['x-goog-api-key: ' . $key, 'Accept: application/json'];
-        $opts = [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 15,
-            CURLOPT_TIMEOUT => 150,
-            CURLOPT_CUSTOMREQUEST => $method,
-        ];
+        $opts = [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 90, CURLOPT_CUSTOMREQUEST => $method, CURLOPT_ENCODING => ''];
         if ($body !== null) {
             $opts[CURLOPT_POSTFIELDS] = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             $headers[] = 'Content-Type: application/json';

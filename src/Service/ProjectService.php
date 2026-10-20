@@ -10,6 +10,7 @@ use Document_Item;
 use Dropdown;
 use Group;
 use GlpiPlugin\Projectflow\Config;
+use GlpiPlugin\Projectflow\RuleEngine;
 use Itil_Project;
 use Html;
 use Log;
@@ -53,10 +54,14 @@ class ProjectService
         if (!empty($visibility['WHERE'])) $criteria['WHERE'] = array_merge($criteria['WHERE'], $visibility['WHERE']);
 
         $raw = [];
+        $canUpdate = [];
         foreach ($DB->request($criteria) as $row) {
             $project = new Project();
             $project->getFromResultSet($row);
-            if ($project->canViewItem()) $raw[] = $row;
+            if ($project->canViewItem()) {
+                $raw[] = $row;
+                $canUpdate[(int) $row['id']] = $project->canUpdateItem();
+            }
         }
         $ids = array_map(static fn($r) => (int) $r['id'], $raw);
         $states = $this->references->getStateMap();
@@ -67,7 +72,7 @@ class ProjectService
         $projects = [];
         foreach ($raw as $row) {
             $id = (int) $row['id'];
-            $projects[] = $this->normalizeProject($row, $states, $metas[$id] ?? [], isset($favorites[$id]), $taskStats[$id] ?? []);
+            $projects[] = $this->normalizeProject($row, $states, $metas[$id] ?? [], isset($favorites[$id]), $taskStats[$id] ?? []) + ['can_update' => $canUpdate[$id] ?? false];
         }
         return $projects;
     }
@@ -142,6 +147,17 @@ class ProjectService
         ];
     }
 
+    /** Project fields + Project Flow data, without the heavy workspace parts (reports, AI). */
+    public function getProjectCore(int $id): ?array
+    {
+        $project = new Project();
+        if (!$project->getFromDB($id) || !$project->canViewItem()) return null;
+        $taskStats = $this->getTaskStatsForProjects([$id])[$id] ?? [];
+        $data = $this->normalizeProject($project->fields, $this->references->getStateMap(), $this->meta->getForProject($id), false, $taskStats);
+        $data['can_update'] = $project->can($id, UPDATE);
+        return $data;
+    }
+
     public function getProject(int $id): ?array
     {
         $project = new Project();
@@ -196,6 +212,10 @@ class ProjectService
         }
         $data['documents'] = $this->getDocuments($id);
         $data['can_add_cost'] = $data['can_update'] && $data['has_money'] && $data['can_view_money'];
+        // Custos lançados nas tarefas que aguardam a gestão (aba Aprovações).
+        $data['cost_approvals'] = ($data['has_money'] && $data['can_view_money'] && empty($data['is_template']))
+            ? (new TaskCostService($this->meta, $this))->forProject($id)
+            : null;
         $data['can_add_document'] = $data['can_update'] && Document::canCreate();
         $data['history'] = $this->getHistory($project);
         $data['counts'] = $this->getRelatedCounts($id, (int) ($taskStats['total'] ?? 0)) + ['meetings'=>count($data['meetings'])];
@@ -239,6 +259,17 @@ class ProjectService
             $override['template_name'] = $name;
         }
 
+        // Business rules: the Project Flow fields are visible to the criteria, and the rule
+        // actions are applied at the end (after this method saves its own data).
+        $ruleSource = (int) ($input['template_id'] ?? 0);
+        $ruleSourceMeta = (!$asTemplate && $ruleSource > 0) ? $this->meta->getForProject($ruleSource) : [];
+        $override['_pf_defer_rules'] = 1;
+        $override['_pf_meta'] = ['template_id' => $asTemplate ? 0 : $ruleSource];
+        foreach (['portfolio', 'risk_level', 'health', 'execution_mode', 'cost_mode'] as $metaKey) {
+            $metaValue = $input[$metaKey] ?? ($ruleSourceMeta[$metaKey] ?? null);
+            if ($metaValue !== null && $metaValue !== '') $override['_pf_meta'][$metaKey] = (string) $metaValue;
+        }
+
         // Projects are created from a template; a template may also copy a regular project.
         $sourceId = (int) ($input[$asTemplate ? 'source_project_id' : 'template_id'] ?? 0);
         $sourceMeta = [];
@@ -246,7 +277,11 @@ class ProjectService
             $source = new Project();
             if (!$source->getFromDB($sourceId) || !$source->canViewItem()) return false;
             if (!$asTemplate && empty($source->fields['is_template'])) return false;
+            // GLPI 11.0.4 - 11.0.7 (glpi-project/glpi#23423): cloning a project re-clones the subtasks
+            // into the SOURCE (the template), duplicating them at every use. Snapshot its tasks first.
+            $sourceTaskIds = $this->projectTaskIds($sourceId);
             $projectId = $source->clone($override, true, $asTemplate);
+            $this->removeCloneDuplicates($sourceId, $sourceTaskIds);
             if ($projectId) {
                 $taskMap = $this->copyClonedTaskMetas($sourceId, (int) $projectId);
                 (new TeamRoleService())->copyFromProject($sourceId, (int) $projectId);
@@ -285,6 +320,8 @@ class ProjectService
         $this->repairClonedTaskStates($projectId);
         if (!empty($input['roles']) && is_array($input['roles'])) (new TeamRoleService())->createFromInput($projectId, $input['roles']);
         $this->createInitialTasks($projectId, (array) ($input['tasks'] ?? []));
+        RuleEngine::finalizeAll('task');
+        RuleEngine::finalize('project', $projectId);
         return (int) $projectId;
     }
 
@@ -327,6 +364,8 @@ class ProjectService
         $end = $payload['plan_end_date'] ?? ($project->fields['plan_end_date'] ?? null);
         if (!$this->validRange($start, $end)) return false;
 
+        $payload['_pf_defer_rules'] = 1;
+        $payload['_pf_meta'] = array_intersect_key($input, array_flip(['portfolio', 'risk_level', 'health', 'execution_mode', 'cost_mode']));
         $ok = (bool) $project->update($payload);
         if ($ok) {
             $this->meta->save($projectId, $input);
@@ -338,6 +377,7 @@ class ProjectService
             if ($groupId > 0) {
                 $this->ensureMember($projectId, Group::class, $groupId);
             }
+            RuleEngine::finalize('project', $projectId);
         }
         return $ok;
     }
@@ -449,23 +489,28 @@ class ProjectService
 
         $items = [];
         $total = 0.0;
-        foreach ($DB->request([
+        $rowsCost = iterator_to_array($DB->request([
             'FROM' => ProjectCost::getTable(),
             'WHERE' => ['projects_id' => $projectId],
             'ORDERBY' => ['begin_date DESC', 'id DESC'],
-        ]) as $row) {
+        ]), false);
+        $origins = TaskCostService::originOf(array_column($rowsCost, 'id'));
+        foreach ($rowsCost as $row) {
+            $origin = $origins[(int) $row['id']] ?? null;
             $cost = (float) ($row['cost'] ?? 0);
             $total += $cost;
             $items[] = [
                 'id' => (int) $row['id'],
-                'name' => (string) (($row['name'] ?? '') ?: ('Custo #' . $row['id'])),
+                'name' => $origin ? (string) preg_replace('/^#\d+ · /u', '', (string) $row['name']) : (string) (($row['name'] ?? '') ?: ('Custo #' . $row['id'])),
                 'begin_date' => $row['begin_date'] ?? null,
                 'end_date' => $row['end_date'] ?? null,
                 'cost' => $cost,
                 'cost_formatted' => self::brl($cost),
                 'budgets_id' => (int) ($row['budgets_id'] ?? 0),
                 'budget' => !empty($row['budgets_id']) ? Dropdown::getDropdownName('glpi_budgets', (int) $row['budgets_id']) : '',
-                'comment' => trim((string) ($row['comment'] ?? '')),
+                'comment' => $origin ? ('Lançado por ' . $origin['user_name'] . ' na tarefa e aprovado pela gestão.') : trim((string) ($row['comment'] ?? '')),
+                'task_id' => $origin['task_id'] ?? 0,
+                'task_url' => $origin ? PLUGIN_PROJECTFLOW_WEBDIR . '/front/task.php?id=' . $origin['task_id'] : '',
             ];
         }
         return ['items' => $items, 'total' => $total, 'total_formatted' => self::brl($total)];
@@ -702,6 +747,50 @@ class ProjectService
         return $map;
     }
 
+    /** @return int[] ids of the tasks of a project (any state). */
+    private function projectTaskIds(int $projectId): array
+    {
+        global $DB;
+        $ids = [];
+        foreach ($DB->request(['SELECT' => ['id'], 'FROM' => ProjectTask::getTable(), 'WHERE' => ['projects_id' => $projectId]]) as $row) {
+            $ids[] = (int) $row['id'];
+        }
+        return $ids;
+    }
+
+    /**
+     * Guard against glpi-project/glpi#23423: tasks that appeared in the source project/template
+     * while it was being cloned are copies GLPI wrongly put there. They are purged (deepest first),
+     * so the template keeps exactly the tasks it had. No-op on fixed GLPI versions.
+     */
+    private function removeCloneDuplicates(int $sourceId, array $before): void
+    {
+        global $DB;
+        // Nothing to duplicate when the source had no tasks. Clones may carry the source's
+        // date_creation, so only ids created after the snapshot are considered.
+        if (!$before) return;
+        $known = array_flip($before);
+        $extra = [];
+        foreach ($DB->request([
+            'SELECT' => ['id'],
+            'FROM' => ProjectTask::getTable(),
+            'WHERE' => ['projects_id' => $sourceId, ['id' => ['>', max($before)]]],
+            'ORDER' => ['id DESC'],
+        ]) as $row) {
+            $id = (int) $row['id'];
+            if (!isset($known[$id])) $extra[] = $id;
+        }
+        if (!$extra) return;
+        foreach ($extra as $id) {
+            $task = new ProjectTask();
+            if ($task->getFromDB($id)) $task->delete(['id' => $id, '_disablenotif' => true], true);
+        }
+        \Toolbox::logInFile('projectflow', sprintf(
+            "Removidas %d tarefa(s) duplicadas pelo GLPI no template/projeto #%d ao criar um projeto a partir dele (glpi-project/glpi#23423).\n",
+            count($extra), $sourceId
+        ));
+    }
+
     /**
      * Removes, from a project just cloned from a template, the tasks the user unchecked.
      * Children of a removed task are kept and moved to the first kept ancestor (or the root).
@@ -788,7 +877,7 @@ class ProjectService
     private function validState(int $id): bool { return $id > 0 && isset($this->references->getStateMap()[$id]); }
     private function firstOpenStateId(): int { foreach($this->references->getProjectStates() as $state) if(empty($state['is_finished'])) return (int)$state['id']; foreach($this->references->getProjectStates() as $state) return (int)$state['id']; return 0; }
     private function repairClonedTaskStates(int $projectId): void { $stateId=Config::int('default_task_state_id',$this->firstOpenStateId()); if($stateId<=0)return; global $DB; foreach($DB->request(['SELECT'=>['id','projectstates_id'],'FROM'=>ProjectTask::getTable(),'WHERE'=>['projects_id'=>$projectId,'is_deleted'=>0]]) as $row){ if((int)($row['projectstates_id']??0)>0)continue; $task=new ProjectTask(); if($task->getFromDB((int)$row['id'])&&$task->canUpdateItem())$task->update(['id'=>(int)$row['id'],'projectstates_id'=>$stateId,'auto_projectstates'=>0]); } }
-    private function canViewMoney(Project $project): bool { $uid=(int)Session::getLoginUserID(); if($uid>0 && (int)($project->fields['users_id']??0)===$uid)return true; if(Session::haveRight('config',UPDATE))return true; if(method_exists($project,'isInTheManagerGroup') && $project->isInTheManagerGroup())return true; return false; }
+    public function canViewMoney(Project $project): bool { $uid=(int)Session::getLoginUserID(); if($uid>0 && (int)($project->fields['users_id']??0)===$uid)return true; if(Session::haveRight('config',UPDATE))return true; if(method_exists($project,'isInTheManagerGroup') && $project->isInTheManagerGroup())return true; return false; }
     private function priority(mixed $v): int { return max(1, min(6, (int) $v)); }
     /** Brazilian money format (1.234,56), independent of the user's GLPI number format. */
     public static function brl(float|int|string|null $value): string

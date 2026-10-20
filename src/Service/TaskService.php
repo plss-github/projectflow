@@ -6,6 +6,7 @@ use CommonITILObject;
 use Contact;
 use Dropdown;
 use GlpiPlugin\Projectflow\Config;
+use GlpiPlugin\Projectflow\RuleEngine;
 use Group;
 use Itil_Project;
 use Log;
@@ -100,6 +101,8 @@ class TaskService
         $data['task_url'] = PLUGIN_PROJECTFLOW_WEBDIR . '/front/task.php?id=' . $taskId;
         $data['can_create_ticket'] = Session::haveRight(Ticket::$rightname, CREATE);
         $data['can_manage_states'] = $this->canManageAllowedStates($taskId);
+        // Real start / end are corrected by the project management (same rule as allowed states).
+        $data['can_edit_real_dates'] = $data['can_manage_states'];
         return $data;
     }
 
@@ -195,6 +198,12 @@ class TaskService
             'plan_end_date' => $end,
             'planned_duration' => $this->plannedDuration($input),
             'content' => mb_substr(trim(strip_tags((string) ($input['content'] ?? ''))), 0, 10000),
+            // Business rules: criteria see the Project Flow data; actions are applied below.
+            '_pf_defer_rules' => 1,
+            '_pf_meta' => [
+                'priority' => (int) ($input['priority'] ?? 3),
+                'assignee' => (int) ($input['assignee_user_id'] ?? Session::getLoginUserID()),
+            ],
         ];
 
         $id = (new ProjectTask())->add($payload);
@@ -208,6 +217,7 @@ class TaskService
 
         $assignee = (int) ($input['assignee_user_id'] ?? Session::getLoginUserID());
         if ($assignee > 0) $this->addTaskMember((int) $id, User::class, $assignee);
+        RuleEngine::finalize('task', (int) $id);
 
         if ($ticketMode) {
             $ticketId = $this->createTicket((int) $id, [
@@ -265,6 +275,15 @@ class TaskService
         }
         if (array_key_exists('plan_start_date', $input)) $payload['plan_start_date'] = $this->date($input['plan_start_date']);
         if (array_key_exists('plan_end_date', $input)) $payload['plan_end_date'] = $this->date($input['plan_end_date']);
+        // Real start / end: only the project management may set them (GLPI also fills them from progress).
+        if ((array_key_exists('real_start_date', $input) || array_key_exists('real_end_date', $input)) && $this->canManageAllowedStates($taskId)) {
+            $realStart = array_key_exists('real_start_date', $input) ? $this->date($input['real_start_date']) : ($task->fields['real_start_date'] ?? null);
+            $realEnd = array_key_exists('real_end_date', $input) ? $this->date($input['real_end_date']) : ($task->fields['real_end_date'] ?? null);
+            if ($realEnd && !$realStart) return false;
+            if (!$this->validRange($realStart, $realEnd)) return false;
+            if (array_key_exists('real_start_date', $input)) $payload['real_start_date'] = $realStart;
+            if (array_key_exists('real_end_date', $input)) $payload['real_end_date'] = $realEnd;
+        }
         if (array_key_exists('planned_duration_hours', $input) || array_key_exists('planned_duration', $input)) $payload['planned_duration'] = $this->plannedDuration($input);
         if (!$this->validRequester($input)) return false;
 
@@ -276,12 +295,15 @@ class TaskService
         }
         if (!$this->validRange($start, $end)) return false;
 
+        $payload['_pf_defer_rules'] = 1;
+        if (array_key_exists('priority', $input)) $payload['_pf_meta'] = ['priority' => (int) $input['priority']];
         $ok = (bool) $task->update($payload);
         if ($ok && array_intersect(['requester_users_id','priority','attention','attention_note','reminder_at','reminder_email','reminder_browser','allowed_states'], array_keys($input))) {
             // The state the task is in stays allowed, so the restriction never strands a task.
             $input['_current_state_id'] = (int) ($payload['projectstates_id'] ?? $task->fields['projectstates_id'] ?? 0);
             $this->meta->saveTaskMeta($taskId, $input);
         }
+        if ($ok) RuleEngine::finalize('task', $taskId);
         return $ok;
     }
 
@@ -361,6 +383,11 @@ class TaskService
         $link = new ProjectTaskLink();
         if ($link->checkIfExist($data)) return true;
         if ($this->wouldCreateDependencyCycle((int) $source->fields['projects_id'], $taskId, $targetId)) return false;
+        // glpi_projecttasklinks requires the uuid of both tasks (NOT NULL, no default): without them
+        // the INSERT fails and the request ended in HTTP 500.
+        $data['source_uuid'] = (string) ($source->fields['uuid'] ?? '');
+        $data['target_uuid'] = (string) ($target->fields['uuid'] ?? '');
+        $data['lag'] = 0;
         return (bool) $link->add($data);
     }
 
@@ -666,15 +693,30 @@ class TaskService
      * Gantt data for the Cronograma tab: day columns on short projects, week columns on long ones,
      * window aligned to whole weeks and stretched to include today, rows in tree order.
      */
+    /**
+     * Gantt data for the schedule tab, with two layers per task:
+     *  - planned: plan_start_date → plan_end_date (g_*), with the overdue tail up to today;
+     *  - real: real_start_date → real_end_date (r_*); a started, unfinished task runs up to today.
+     * The view (Planejado / Real / Comparar) is switched on the client.
+     */
     public function buildGantt(array $tree, array $project): array
     {
         $day = 86400;
         $midnight = static fn(int $ts): int => (int) strtotime(date('Y-m-d', $ts));
-        $dated = array_values(array_filter($tree, static fn(array $t): bool => !empty($t['plan_start_ts']) && !empty($t['plan_end_ts'])));
-        if (!$dated) return ['has_dates' => false, 'rows' => [], 'columns' => [], 'months' => []];
         $today = $midnight(time());
-        $min = $midnight((int) min(array_column($dated, 'plan_start_ts')));
-        $max = $midnight((int) max(array_column($dated, 'plan_end_ts')));
+        $hasPlan = static fn(array $t): bool => !empty($t['plan_start_ts']) && !empty($t['plan_end_ts']);
+        $dated = array_values(array_filter($tree, static fn(array $t): bool => $hasPlan($t) || !empty($t['real_start_ts'])));
+        if (!$dated) return ['has_dates' => false, 'rows' => [], 'columns' => [], 'months' => []];
+        $points = [];
+        foreach ($dated as $t) {
+            if ($hasPlan($t)) { $points[] = (int) $t['plan_start_ts']; $points[] = (int) $t['plan_end_ts']; }
+            if (!empty($t['real_start_ts'])) {
+                $points[] = (int) $t['real_start_ts'];
+                $points[] = !empty($t['real_end_ts']) ? (int) $t['real_end_ts'] : time();
+            }
+        }
+        $min = $midnight(min($points));
+        $max = $midnight(max($points));
         if (!empty($project['plan_start_ts'])) $min = min($min, $midnight((int) $project['plan_start_ts']));
         if (!empty($project['plan_end_ts'])) $max = max($max, $midnight((int) $project['plan_end_ts']));
         if ($today < $min && $min - $today <= 45 * $day) $min = $today;
@@ -684,7 +726,7 @@ class TaskService
         $days = (int) round(($end - $start) / $day) + 1;
         if ($days < 14) { $end = (int) strtotime('+' . (14 - $days) . ' days', $end); $days = 14; }
         $mode = $days <= 63 ? 'day' : 'week';
-        $idx = static fn(int $ts): int => (int) round(($midnight($ts) - $start) / $day);
+        $idx = static fn(int $ts): int => max(0, min($days - 1, (int) round(($midnight($ts) - $start) / $day)));
         $pct = static fn(float $d): float => round($d / $days * 100, 3);
         $wd = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
         $mn = [1 => 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -702,33 +744,56 @@ class TaskService
             }
         }
         foreach ($months as &$m) { $m['left'] = $pct($m['from']); $m['width'] = $pct($m['to'] - $m['from'] + 1); $m['short'] = ($m['to'] - $m['from'] + 1) < ($mode === 'day' ? 4 : 10); } unset($m);
-        $todayIdx = ($today >= $start && $today <= $end) ? $idx($today) : null;
+        $todayIdx = ($today >= $start && $today <= $end) ? (int) round(($today - $start) / $day) : null;
         $rows = [];
+        $realCount = 0;
         foreach ($dated as $t) {
-            $s = $idx((int) $t['plan_start_ts']); $e = max($s, $idx((int) $t['plan_end_ts']));
-            $s = max(0, min($days - 1, $s)); $e = max($s, min($days - 1, $e));
             $milestone = !empty($t['is_milestone']);
-            $left = $milestone ? $pct($e + 0.5) : $pct($s);
-            $width = $milestone ? 0 : $pct($e - $s + 1);
-            $finished = !empty($t['state']['is_finished']) || (int) ($t['percent_done'] ?? 0) >= 100;
-            $late = !$finished && $todayIdx !== null && $todayIdx > $e;
-            $lateDays = (!$finished && $today > $midnight((int) $t['plan_end_ts'])) ? (int) round(($today - $midnight((int) $t['plan_end_ts'])) / $day) : 0;
-            $tail = $left + $width;
-            $rows[] = $t + [
-                'g_left' => $left,
-                'g_width' => $width,
-                'g_late_left' => $late ? $pct($e + 1) : null,
-                'g_late_width' => $late ? $pct($todayIdx - $e) : null,
-                'g_late_days' => $lateDays,
-                'g_finished' => $finished,
-                'g_label_left' => ($late ? $pct($todayIdx + 1) : $tail) > 72,
-                'g_range' => $milestone ? date('d/m', (int) $t['plan_end_ts']) : (date('d/m', (int) $t['plan_start_ts']) . ' – ' . date('d/m', (int) $t['plan_end_ts'])),
-                'g_days' => $e - $s + 1,
-            ];
+            // A task with a real end date is done in practice (no overdue tail after it).
+            $finished = !empty($t['state']['is_finished']) || (int) ($t['percent_done'] ?? 0) >= 100 || !empty($t['real_end_ts']);
+            $row = $t + ['g_has_plan' => $hasPlan($t), 'g_finished' => $finished, 'g_late_left' => null, 'g_late_width' => null, 'g_late_days' => 0, 'g_label_left' => false, 'g_range' => '', 'g_days' => 0, 'g_left' => 0, 'g_width' => 0];
+            if ($row['g_has_plan']) {
+                $s = $idx((int) $t['plan_start_ts']); $e = max($s, $idx((int) $t['plan_end_ts']));
+                $left = $milestone ? $pct($e + 0.5) : $pct($s);
+                $width = $milestone ? 0 : $pct($e - $s + 1);
+                $late = !$finished && $todayIdx !== null && $todayIdx > $e;
+                $row['g_left'] = $left;
+                $row['g_width'] = $width;
+                $row['g_late_left'] = $late ? $pct($e + 1) : null;
+                $row['g_late_width'] = $late ? $pct($todayIdx - $e) : null;
+                $row['g_late_days'] = (!$finished && $today > $midnight((int) $t['plan_end_ts'])) ? (int) round(($today - $midnight((int) $t['plan_end_ts'])) / $day) : 0;
+                $row['g_label_left'] = ($late ? $pct($todayIdx + 1) : $left + $width) > 72;
+                $row['g_range'] = $milestone ? date('d/m', (int) $t['plan_end_ts']) : (date('d/m', (int) $t['plan_start_ts']) . ' – ' . date('d/m', (int) $t['plan_end_ts']));
+                $row['g_days'] = $e - $s + 1;
+            }
+            // Real layer
+            $row['r_has'] = !empty($t['real_start_ts']);
+            $row['r_ongoing'] = false;
+            $row['r_var_days'] = null;
+            if ($row['r_has']) {
+                $realCount++;
+                $rsTs = $midnight((int) $t['real_start_ts']);
+                $reTs = !empty($t['real_end_ts']) ? max($rsTs, $midnight((int) $t['real_end_ts'])) : ($finished ? $rsTs : max($rsTs, $today));
+                $row['r_ongoing'] = empty($t['real_end_ts']) && !$finished;
+                $rs = $idx($rsTs); $re = max($rs, $idx($reTs));
+                $row['r_milestone'] = $milestone && !empty($t['real_end_ts']);
+                $row['r_left'] = $row['r_milestone'] ? $pct($re + 0.5) : $pct($rs);
+                $row['r_width'] = $row['r_milestone'] ? 0 : $pct($re - $rs + 1);
+                $row['r_days'] = $re - $rs + 1;
+                $row['r_range'] = date('d/m', $rsTs) . ' – ' . ($row['r_ongoing'] ? 'hoje' : date('d/m', $reTs));
+                $row['r_label_left'] = $row['r_left'] + $row['r_width'] > 72;
+                // Variance against the plan: positive = later than planned, negative = earlier.
+                if (!empty($t['plan_end_ts'])) {
+                    $ref = !empty($t['real_end_ts']) ? $midnight((int) $t['real_end_ts']) : ($row['r_ongoing'] && $today > $midnight((int) $t['plan_end_ts']) ? $today : null);
+                    if ($ref !== null) $row['r_var_days'] = (int) round(($ref - $midnight((int) $t['plan_end_ts'])) / $day);
+                }
+                $row['r_start_var'] = !empty($t['plan_start_ts']) ? (int) round(($rsTs - $midnight((int) $t['plan_start_ts'])) / $day) : null;
+            }
+            $rows[] = $row;
         }
         return [
             'has_dates' => true, 'mode' => $mode, 'days' => $days, 'cols' => count($columns),
-            'columns' => $columns, 'months' => $months, 'rows' => $rows,
+            'columns' => $columns, 'months' => $months, 'rows' => $rows, 'real_count' => $realCount,
             'today_pct' => $todayIdx !== null ? $pct($todayIdx + 0.5) : null,
             'today_label' => date('d/m', $today),
             'start_label' => date('d/m/Y', $start), 'end_label' => date('d/m/Y', $end),
@@ -771,6 +836,19 @@ class TaskService
     {
         global $DB;
         $labels = [0 => 'Fim → início', 1 => 'Início → início', 2 => 'Fim → fim', 3 => 'Início → fim'];
+        // glpi_projecttasklinks has no date: when / by whom the link was made comes from the task
+        // history (relation added), so the dependency takes its place in the task timeline.
+        $added = [];
+        foreach ($DB->request([
+            'SELECT' => ['new_value', 'user_name', 'date_mod'],
+            'FROM' => 'glpi_logs',
+            'WHERE' => ['itemtype' => ProjectTask::class, 'items_id' => $taskId, 'itemtype_link' => ProjectTask::class, 'linked_action' => 15],
+            'ORDER' => ['id ASC'],
+        ]) as $log) {
+            if (preg_match('/\((\d+)\)\s*$/', (string) $log['new_value'], $m)) {
+                $added[(int) $m[1]] = ['date' => $log['date_mod'], 'user_name' => preg_replace('/\s*\(\d+\)$/', '', (string) $log['user_name'])];
+            }
+        }
         $items = [];
         foreach ($DB->request(['FROM' => ProjectTaskLink::getTable(), 'WHERE' => ['OR' => [['projecttasks_id_source' => $taskId], ['projecttasks_id_target' => $taskId]]]]) as $row) {
             $outgoing = (int) $row['projecttasks_id_source'] === $taskId;
@@ -780,7 +858,7 @@ class TaskService
             if ($task->getFromDB($other) && $task->canViewItem()) {
                 $name = (string) $task->fields['name'];
             }
-            $items[] = ['id' => (int) $row['id'], 'direction' => $outgoing ? 'outgoing' : 'incoming', 'other_id' => $other, 'other_name' => $name, 'type' => (int) $row['type'], 'type_label' => $labels[(int) $row['type']] ?? 'Dependência'];
+            $items[] = ['id' => (int) $row['id'], 'direction' => $outgoing ? 'outgoing' : 'incoming', 'other_id' => $other, 'other_name' => $name, 'type' => (int) $row['type'], 'type_label' => $labels[(int) $row['type']] ?? 'Dependência', 'date' => $added[$other]['date'] ?? null, 'user_name' => $added[$other]['user_name'] ?? ''];
         }
         return $items;
     }
@@ -947,6 +1025,8 @@ class TaskService
             'plan_end_ts' => $end ? strtotime($end) : null,
             'real_start_date' => $row['real_start_date'] ?? null,
             'real_end_date' => $row['real_end_date'] ?? null,
+            'real_start_ts' => !empty($row['real_start_date']) ? strtotime((string) $row['real_start_date']) : null,
+            'real_end_ts' => !empty($row['real_end_date']) ? strtotime((string) $row['real_end_date']) : null,
             'planned_duration' => (int) ($row['planned_duration'] ?? 0),
             'planned_duration_hours' => round(((int) ($row['planned_duration'] ?? 0)) / 3600, 2),
             'effective_duration' => (int) ($row['effective_duration'] ?? 0),
@@ -954,6 +1034,7 @@ class TaskService
             'is_overdue' => (bool) $isOverdue,
             'can_update' => $canUpdate,
             'creator_name' => !empty($row['users_id']) ? self::userName((int) $row['users_id']) : '',
+            'date_creation' => $row['date_creation'] ?? null,
             'date_mod' => $row['date_mod'] ?? null,
             'task_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/task.php?id=' . (int) $row['id'],
         ];

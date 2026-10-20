@@ -34,6 +34,7 @@ class DashboardController
             'ajax_project_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/ajax/project.php',
             'my_tasks_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/tasks.php?scope=mine',
             'tasks_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/tasks.php?scope=mine',
+            'workload_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/workload.php',
             'templates_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/templates.php',
             'csrf_token'=>Session::getNewCSRFToken(),
             'compact_cards'=>Config::bool('compact_cards'),

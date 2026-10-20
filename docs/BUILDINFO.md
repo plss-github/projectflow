@@ -4,12 +4,12 @@
 - Version: 3.5.1
 - Build date: 2026-10-01
 - Target: GLPI 11.0.x / PHP 8.2+
-- Assets: `public/css/projectflow-3.5.0.css`, `public/js/projectflow-3.5.0.js`
+- Assets: `public/css/projectflow.css`, `public/js/projectflow.js`
 
 ## Build checks
 
 - PHP syntax check (`php -l`) on every PHP file.
-- JavaScript syntax check on `public/js/projectflow-3.5.0.js`.
+- JavaScript syntax check on `public/js/projectflow.js`.
 - `composer.json` JSON parse.
 - Release package contains the top-level `projectflow/` folder.
 

@@ -122,17 +122,17 @@ try {
             projectflow_json_response(true,['contracts'=>(new ContractService())->getForProject($projectId),'message'=>'Contrato desvinculado.']);
 
         case 'report_generate':
-            $projectId=(int)($input['project_id']??0);$report=(new WeeklyReportService())->generate($projectId,$input['week_start']??null);if($report===null)projectflow_json_response(false,['message'=>'Não foi possível gerar o relatório.'],400);
+            $projectId=(int)($input['project_id']??0);$report=(new WeeklyReportService())->generate($projectId,$input['week_start']??null,(string)($input['scope']??'week'));if($report===null)projectflow_json_response(false,['message'=>'Não foi possível gerar o relatório.'],400);
             projectflow_json_response(true,['report'=>$report]);
 
         case 'report_ai':
             $projectId=(int)($input['project_id']??0);
             try {
-                $report=(new \GlpiPlugin\Projectflow\Service\AiReportService())->generate($projectId,(string)($input['scope']??'week'),$input['week_start']??null);
+                $report=(new \GlpiPlugin\Projectflow\Service\AiReportService())->generate($projectId,(string)($input['scope']??'week'),$input['week_start']??null,!empty($input['force']));
             } catch (\RuntimeException $e) {
                 projectflow_json_response(false,['message'=>$e->getMessage()],400);
             }
-            projectflow_json_response(true,['report'=>$report,'message'=>'Relatório gerado pelo Gemini ('.$report['model'].').']);
+            projectflow_json_response(true,['report'=>$report,'message'=>'Relatório gerado pelo Gemini ('.($report['ai']['model']??'').').']);
 
         case 'report_save':
             $projectId=(int)($input['project_id']??0);$id=(new WeeklyReportService())->save($projectId,(string)($input['week_start']??''),(string)($input['content']??''));if(!$id)projectflow_json_response(false,['message'=>'Não foi possível salvar o relatório.'],400);

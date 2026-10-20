@@ -3,6 +3,8 @@
 use Glpi\Plugin\Hooks;
 use GlpiPlugin\Projectflow\Automation;
 use GlpiPlugin\Projectflow\Menu;
+use GlpiPlugin\Projectflow\RuleProjectCollection;
+use GlpiPlugin\Projectflow\RuleProjectTaskCollection;
 
 if (!defined('GLPI_ROOT')) {
     die('Direct access not allowed');
@@ -30,10 +32,15 @@ function plugin_init_projectflow(): void
         return;
     }
 
+    // Business rules for projects and project tasks, listed in Administração > Regras.
+    Plugin::registerClass(RuleProjectCollection::class, ['rulecollections_types' => true]);
+    Plugin::registerClass(RuleProjectTaskCollection::class, ['rulecollections_types' => true]);
+
     // Keep plugin-owned metadata synchronized with native GLPI lifecycle events.
     $PLUGIN_HOOKS[Hooks::ITEM_PURGE]['projectflow'] = [
         ProjectTask::class => 'plugin_projectflow_item_purge',
         Project::class => 'plugin_projectflow_item_purge',
+        ProjectCost::class => 'plugin_projectflow_item_purge',
     ];
     // Progress rules (state change / notification by percent) for every task update,
     // whatever the screen: Project Flow, Kanban or native GLPI form.
@@ -51,8 +58,11 @@ function plugin_init_projectflow(): void
         Project::class => 'plugin_projectflow_pre_project_save',
     ];
     // A document attached to a task is also attached to its project (Project Flow or native form).
+    // Project / task business rules: actions that need the id of the new item.
     $PLUGIN_HOOKS[Hooks::ITEM_ADD]['projectflow'] = [
         Document_Item::class => 'plugin_projectflow_document_item_add',
+        Project::class => 'plugin_projectflow_rules_item_add',
+        ProjectTask::class => 'plugin_projectflow_rules_item_add',
     ];
 
     if (!Session::getLoginUserID()) {
@@ -88,6 +98,12 @@ function plugin_init_projectflow(): void
         plugin_projectflow_redirect_native_project_list();
     }
     $PLUGIN_HOOKS[Hooks::REDEFINE_MENUS]['projectflow'] = 'plugin_projectflow_redefine_menus';
+    // Menu entries/links are cached in the session: rebuild them once per plugin version.
+    $menuStamp = PLUGIN_PROJECTFLOW_VERSION . '-menu3';
+    if (($_SESSION['projectflow_menu_stamp'] ?? '') !== $menuStamp) {
+        unset($_SESSION['glpimenu']);
+        $_SESSION['projectflow_menu_stamp'] = $menuStamp;
+    }
 
     $menus = [];
     if (!$replaceNative && Project::canView()) {
@@ -126,8 +142,8 @@ function plugin_projectflow_register_assets(): void
         $meta = @filemtime($file) . '-' . @filesize($file);
         return $relative . '?h=' . substr(sha1($meta), 0, 10);
     };
-    $css = $stamp('css/projectflow-3.5.0.css');
-    $js = $stamp('js/projectflow-3.5.0.js');
+    $css = $stamp('css/projectflow.css');
+    $js = $stamp('js/projectflow.js');
 
     $PLUGIN_HOOKS[Hooks::ADD_CSS]['projectflow'] ??= [];
     $PLUGIN_HOOKS[Hooks::ADD_JAVASCRIPT]['projectflow'] ??= [];
@@ -184,11 +200,47 @@ function plugin_projectflow_redefine_menus(array $menus): array
     }
     $page = '/plugins/projectflow/front/index.php';
     $menus['tools']['content']['project']['page'] = $page;
-    $menus['tools']['content']['project']['links']['search'] = $page;
+    $menus['tools']['content']['project']['links'] = plugin_projectflow_menu_links(
+        (array) ($menus['tools']['content']['project']['links'] ?? [])
+    );
     if (($menus['tools']['default'] ?? '') === '/front/project.php') {
         $menus['tools']['default'] = $page;
     }
     return $menus;
+}
+
+/**
+ * Header shortcuts (Adicionar, Templates, Minhas tarefas, Kanban global) pointing to the Project
+ * Flow screens instead of the native ones. Unknown extra links are kept as they are.
+ */
+function plugin_projectflow_menu_links(array $links = []): array
+{
+    $base = '/plugins/projectflow/front';
+    $out = ['search' => $base . '/index.php'];
+    if (Project::canCreate()) {
+        $out['add'] = $base . '/index.php?new=1';
+        $out['template'] = $base . '/templates.php';
+    }
+    foreach ($links as $key => $url) {
+        if (in_array($key, ['search', 'add', 'template', 'lists', 'summary_kanban'], true)) continue;
+        // "Minhas tarefas" (key is an HTML label) -> Project Flow task center
+        if (is_string($url) && stripos($url, 'projecttask') !== false) {
+            $out[$key] = $base . '/tasks.php?scope=mine';
+            continue;
+        }
+        $out[$key] = $url;
+    }
+    if (!array_filter(array_keys($out), static fn($k) => str_contains((string) $k, 'ti-eye-check'))) {
+        $label = '<i class="ti ti-eye-check" title="Minhas tarefas"></i><span class="d-none d-xxl-block">Minhas tarefas</span>';
+        $out[$label] = $base . '/tasks.php?scope=mine';
+    }
+    if (!array_filter(array_keys($out), static fn($k) => str_contains((string) $k, 'ti-chart-bar'))) {
+        $label = '<i class="ti ti-chart-bar" title="Carga de trabalho"></i><span class="d-none d-xxl-block">Carga de trabalho</span>';
+        $out[$label] = $base . '/workload.php';
+    }
+    $out['summary_kanban'] = $base . '/index.php?view=kanban';
+    if (isset($links['lists'])) $out['lists'] = $links['lists'];
+    return $out;
 }
 
 /**

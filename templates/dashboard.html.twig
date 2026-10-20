@@ -2,6 +2,7 @@
      data-project-endpoint="{{ ajax_project_url }}" data-csrf="{{ csrf_token }}" data-default-view="{{ default_view }}">
   <nav class="pf-dash-menu" aria-label="Ações do portfólio">
     <a class="pf-dash-menu-link" href="{{ tasks_url }}"><i class="ti ti-list-check"></i> Minhas tarefas</a>
+    <a class="pf-dash-menu-link" href="{{ workload_url }}" title="Horas planejadas x capacidade de cada pessoa, por semana"><i class="ti ti-chart-bar"></i> Carga de trabalho</a>
     <a class="pf-dash-menu-link" href="{{ native_list_url }}" title="Lista de projetos nativa do GLPI (busca avançada, ações em massa)"><i class="ti ti-list-search"></i> Lista nativa</a>
     {% if can_create_project %}
       <div class="dropdown pf-dash-menu-new">
@@ -38,7 +39,7 @@
     <select id="pf-project-health-filter" class="form-select pf-filter-select"><option value="">Toda saúde</option><option value="good">Saudável</option><option value="attention">Atenção</option><option value="critical">Crítico</option></select>
     <select id="pf-project-portfolio-filter" class="form-select pf-filter-select"><option value="">Todos os portfólios</option>{% for portfolio in portfolios %}<option value="{{ portfolio|lower }}">{{ portfolio }}</option>{% endfor %}</select>
     <button class="btn btn-outline-secondary pf-icon-btn" id="pf-clear-project-filters" title="Limpar filtros"><i class="ti ti-filter-off"></i></button>
-    <div class="pf-view-switch" role="group" aria-label="Visualização"><button type="button" data-view="cards" title="Cards"><i class="ti ti-layout-grid"></i></button><button type="button" data-view="table" title="Tabela"><i class="ti ti-table"></i></button></div>
+    <div class="pf-view-switch" role="group" aria-label="Visualização"><button type="button" data-view="cards" title="Cards"><i class="ti ti-layout-grid"></i></button><button type="button" data-view="table" title="Tabela"><i class="ti ti-table"></i></button><button type="button" data-view="kanban" title="Kanban por estado (arraste para mudar o estado)"><i class="ti ti-layout-columns"></i></button></div>
   </section>
 
   <div class="pf-resultbar"><span><strong id="pf-visible-count">{{ projects|length }}</strong> projeto(s)</span><span id="pf-active-filter-label">Portfólio completo</span></div>
@@ -78,6 +79,30 @@
       <div class="table-responsive"><table class="table pf-table align-middle"><thead><tr><th>Projeto</th><th>Estado</th><th>Saúde</th><th>Responsável</th><th>Portfólio</th><th>Progresso</th><th>Prazo</th><th></th></tr></thead><tbody>
       {% for project in projects %}<tr data-pf-table-project="{{ project.id }}"><td><a href="{{ project.plugin_url }}"><strong>{{ project.name }}</strong><small>{{ project.code ?: 'PROJ-' ~ project.id }}</small></a></td><td><span class="pf-state-badge" style="--pf-state-color:{{ project.state.color }}"><i></i>{{ project.state.name }}</span></td><td><span class="pf-health pf-health-{{ project.health_effective }}"><i></i>{{ project.health_effective == 'good' ? 'Saudável' : (project.health_effective == 'attention' ? 'Atenção' : 'Crítico') }}</span></td><td>{{ project.manager_name }}</td><td>{{ project.portfolio ?: '—' }}</td><td><span class="pf-table-progress"><span style="width:{{ project.percent_done }}%"></span></span>{{ project.percent_done }}%</td><td class="{{ project.is_overdue ? 'pf-text-danger' : '' }}">{{ project.plan_end_date ? project.plan_end_date|date('d/m/Y') : '—' }}</td><td><a class="btn btn-sm btn-ghost-secondary" href="{{ project.plugin_url }}"><i class="ti ti-chevron-right"></i></a></td></tr>{% endfor %}
       </tbody></table></div>
+    </section>
+
+    <section class="pf-pk d-none" id="pf-project-kanban-view" aria-label="Kanban de projetos por estado">
+      {% for state in states %}
+        {% set col = projects|filter(p => p.state.id == state.id) %}
+        <div class="pf-pk-col" data-pf-pk-state="{{ state.id }}" style="--pf-state-color:{{ state.color ?: '#94a3b8' }}">
+          <header><i></i><strong>{{ state.name }}</strong><span class="pf-pk-count">{{ col|length }}</span></header>
+          <div class="pf-pk-list">
+            {% for project in col %}
+              <a class="pf-pk-card {{ project.can_update ? 'is-draggable' : '' }}" href="{{ project.plugin_url }}" draggable="{{ project.can_update ? 'true' : 'false' }}" data-pf-table-project="{{ project.id }}" data-pf-pk-project="{{ project.id }}">
+                <div class="pf-pk-top"><span class="pf-project-code">{{ project.code ?: 'PROJ-' ~ project.id }}</span><span class="pf-health pf-health-{{ project.health_effective }}"><i></i>{{ project.health_effective == 'good' ? 'Saudável' : (project.health_effective == 'attention' ? 'Atenção' : 'Crítico') }}</span></div>
+                <strong class="pf-pk-name">{{ project.name }}</strong>
+                <div class="pf-pk-progress"><div><i style="width:{{ project.percent_done }}%"></i></div><b>{{ project.percent_done }}%</b></div>
+                <div class="pf-pk-meta">
+                  <span><i class="ti ti-user"></i>{{ project.manager_name }}</span>
+                  <span class="{{ project.is_overdue ? 'pf-text-danger' : '' }}"><i class="ti ti-calendar-due"></i>{{ project.plan_end_date ? project.plan_end_date|date('d/m/Y') : 'Sem prazo' }}</span>
+                  <span><i class="ti ti-list-check"></i>{{ project.task_stats.completed }}/{{ project.task_stats.total }}</span>
+                </div>
+              </a>
+            {% endfor %}
+            <div class="pf-pk-empty">Nenhum projeto</div>
+          </div>
+        </div>
+      {% endfor %}
     </section>
   {% endif %}
 
