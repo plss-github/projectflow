@@ -3,7 +3,7 @@
 ## Validações executadas no build
 
 - `php -l` em todos os arquivos PHP: **OK**.
-- `node --check public/js/projectflow-3.5.0.js`: **OK**.
+- `node --check public/js/projectflow.js`: **OK**.
 - parse do `composer.json`: **OK**.
 - balanço de delimitadores e blocos Twig dos seis templates: **OK**.
 - verificação de templates usados pelos front controllers: **OK**.

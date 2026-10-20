@@ -20,6 +20,7 @@ class Menu extends CommonGLPI
             'title' => 'Project Flow',
             'page' => $base . '/index.php',
             'icon' => self::getIcon(),
+            'links' => function_exists('plugin_projectflow_menu_links') ? plugin_projectflow_menu_links() : [],
             'options' => [
                 'dashboard' => ['title' => 'Portfólio', 'page' => $base . '/index.php', 'icon' => 'ti ti-dashboard'],
             ],

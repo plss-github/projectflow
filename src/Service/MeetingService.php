@@ -221,6 +221,7 @@ class MeetingService
             'start_at' => $row['start_at'],
             'duration_minutes' => (int) $row['duration_minutes'],
             'duration_label' => WorklogService::formatMinutes((int) $row['duration_minutes']),
+            'date_creation' => $row['date_creation'] ?? $row['start_at'],
             'participants' => (string) ($row['participants'] ?? ''),
             'summary' => (string) ($row['summary'] ?? ''),
             'decisions' => (string) ($row['decisions'] ?? ''),

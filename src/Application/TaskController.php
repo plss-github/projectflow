@@ -6,6 +6,7 @@ use GlpiPlugin\Projectflow\Service\AssetService;
 use GlpiPlugin\Projectflow\Service\MeetingService;
 use GlpiPlugin\Projectflow\Service\ProjectService;
 use GlpiPlugin\Projectflow\Service\ReferenceService;
+use GlpiPlugin\Projectflow\Service\TaskCostService;
 use GlpiPlugin\Projectflow\Service\TaskService;
 use GlpiPlugin\Projectflow\Service\WorklogService;
 use Session;
@@ -39,8 +40,31 @@ class TaskController
             $meetings
         ));
 
+        // Single timeline (as GLPI's ITIL timeline): comments, executions, meetings and dependencies,
+        // newest first, ordered by when each entry was recorded.
+        $timeline = [];
+        foreach ($task['activities'] ?? [] as $item) $timeline[] = ['kind' => 'comment', 'at' => (string) ($item['date_creation'] ?? ''), 'item' => $item];
+        foreach ($task['worklogs'] ?? [] as $item) $timeline[] = ['kind' => 'execution', 'at' => (string) ($item['date_creation'] ?: $item['work_date']), 'item' => $item];
+        foreach ($meetings as $item) $timeline[] = ['kind' => 'meeting', 'at' => (string) ($item['date_creation'] ?? $item['start_at']), 'item' => $item];
+        foreach ($task['dependencies'] ?? [] as $item) $timeline[] = ['kind' => 'dependency', 'at' => (string) ($item['date'] ?? ''), 'item' => $item];
+        $costService = new TaskCostService();
+        $costCtx = $costService->context($taskId);
+        $costs = $costService->forTask($taskId);
+        foreach ($costs as $item) $timeline[] = ['kind' => 'cost', 'at' => $item['date_creation'], 'item' => $item];
+        usort($timeline, static fn(array $a, array $b): int => strcmp($b['at'], $a['at']));
+        $timelineCounts = array_count_values(array_column($timeline, 'kind'));
+
         return [
             'task' => $task,
+            'timeline' => $timeline,
+            'timeline_counts' => $timelineCounts + ['comment' => 0, 'execution' => 0, 'meeting' => 0, 'dependency' => 0, 'cost' => 0],
+            'cost_enabled' => (bool) ($costCtx['enabled'] ?? false),
+            'can_add_cost' => (bool) ($costCtx['can_add'] ?? false),
+            'can_approve_cost' => (bool) ($costCtx['can_approve'] ?? false),
+            'cost_summary' => [
+                'pending' => count(array_filter($costs, static fn($c) => $c['status'] === 'pending')),
+                'approved_total' => ProjectService::brl(array_sum(array_map(static fn($c) => $c['status'] === 'approved' ? $c['cost'] : 0, $costs))),
+            ],
             'project' => $project,
             'meetings' => $meetings,
             'subtasks' => $subtasks,
@@ -64,6 +88,9 @@ class TaskController
             'my_tasks_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/tasks.php?scope=mine',
             'tasks_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/tasks.php?scope=mine',
             'dashboard_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/index.php',
+            // GLPI preference (Minhas configurações > Layout do botão de ação): merged dropdown or split buttons.
+            'action_btn_split' => (int) ($_SESSION['glpitimeline_action_btn_layout'] ?? 0) === \Config::TIMELINE_ACTION_BTN_SPLITTED,
+            'task_base_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/task.php?id=',
             'csrf_token' => Session::getNewCSRFToken(),
         ];
     }

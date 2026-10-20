@@ -161,6 +161,8 @@ function plugin_projectflow_install(): bool
         projectflow_add_column('glpi_plugin_projectflow_meetings', 'projecttasks_id', "INT UNSIGNED NOT NULL DEFAULT 0 AFTER `projects_id`");
     }
 
+    \GlpiPlugin\Projectflow\Service\TaskCostService::ensureTable();
+
     if (!$DB->tableExists('glpi_plugin_projectflow_taskassets')) {
         $DB->doQuery("CREATE TABLE `glpi_plugin_projectflow_taskassets` (
             `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -285,7 +287,13 @@ function plugin_projectflow_uninstall(): bool
     global $DB;
 
     CronTask::unregister('projectflow');
+    // Business rules of this plugin (with their criteria and actions).
+    try {
+        \GlpiPlugin\Projectflow\RuleEngine::purgeRules();
+    } catch (\Throwable) {
+    }
     foreach ([
+        'glpi_plugin_projectflow_taskcosts',
         'glpi_plugin_projectflow_progressrules',
         'glpi_plugin_projectflow_teamroles',
         'glpi_plugin_projectflow_roles',
@@ -322,6 +330,12 @@ function plugin_projectflow_item_purge(CommonDBTM $item): void
         return;
     }
 
+    if ($item instanceof ProjectCost) {
+        // A native project cost that came from an approved task cost: it no longer counts.
+        \GlpiPlugin\Projectflow\Service\TaskCostService::onProjectCostPurge($id);
+        return;
+    }
+
     if ($item instanceof ProjectTask) {
         $tables = [
             'glpi_plugin_projectflow_taskmeta' => ['projecttasks_id' => $id],
@@ -329,6 +343,7 @@ function plugin_projectflow_item_purge(CommonDBTM $item): void
             'glpi_plugin_projectflow_worklogs' => ['projecttasks_id' => $id],
             'glpi_plugin_projectflow_meetings' => ['projecttasks_id' => $id],
             'glpi_plugin_projectflow_taskassets' => ['projecttasks_id' => $id],
+            'glpi_plugin_projectflow_taskcosts' => ['projecttasks_id' => $id],
         ];
         foreach ($tables as $table => $where) {
             if ($DB->tableExists($table)) {
@@ -346,6 +361,7 @@ function plugin_projectflow_item_purge(CommonDBTM $item): void
             'glpi_plugin_projectflow_worklogs' => ['projects_id' => $id],
             'glpi_plugin_projectflow_meetings' => ['projects_id' => $id],
             'glpi_plugin_projectflow_weeklyreports' => ['projects_id' => $id],
+            'glpi_plugin_projectflow_taskcosts' => ['projects_id' => $id],
         ];
         foreach ($tables as $table => $where) {
             if ($DB->tableExists($table)) {
@@ -368,6 +384,20 @@ function plugin_projectflow_item_update(CommonDBTM $item): void
         (new \GlpiPlugin\Projectflow\Service\ProgressRuleService())->onTaskUpdated($item);
     } catch (\Throwable $e) {
         \Toolbox::logError('[Project Flow] item_update: ' . $e->getMessage());
+    }
+}
+
+
+/**
+ * After a project / project task is created: business rule actions that need the new id
+ * (team, Project Flow fields, template tasks).
+ */
+function plugin_projectflow_rules_item_add(CommonDBTM $item): void
+{
+    try {
+        \GlpiPlugin\Projectflow\RuleEngine::postAdd($item);
+    } catch (\Throwable $e) {
+        \Toolbox::logError('[Project Flow] rules item_add: ' . $e->getMessage());
     }
 }
 
@@ -399,6 +429,11 @@ function plugin_projectflow_document_item_add(CommonDBTM $item): void
 function plugin_projectflow_pre_task_save(CommonDBTM $item): void
 {
     if (!$item instanceof ProjectTask || !is_array($item->input ?? null)) {
+        return;
+    }
+    // Business rules (Administração > Regras) may set the state, type... before progress is computed.
+    \GlpiPlugin\Projectflow\RuleEngine::preSave($item);
+    if (!is_array($item->input ?? null)) {
         return;
     }
     $input = &$item->input;
@@ -434,6 +469,7 @@ function plugin_projectflow_pre_project_save(CommonDBTM $item): void
     if (!$item instanceof Project || !is_array($item->input ?? null)) {
         return;
     }
+    \GlpiPlugin\Projectflow\RuleEngine::preSave($item);
     $stateId = (int) ($item->input['projectstates_id'] ?? ($item->fields['projectstates_id'] ?? 0));
     if ((new \GlpiPlugin\Projectflow\Service\MetaService())->isPausedState($stateId)) {
         $item->input['_disablenotif'] = true;

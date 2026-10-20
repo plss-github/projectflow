@@ -2,6 +2,77 @@
 
 ## 3.5.1 - 2026-10-01
 
+### Custos nas tarefas com aprovação (novo)
+
+- Na tarefa, **Responder ▾ › Adicionar custo** (ícone de cifrão; botão **Custo** no layout dividido): descrição, data, valor e observação. O custo aparece no acompanhamento da tarefa com o status (aguardando, aprovado, recusado).
+- Nova aba **Aprovações** no projeto, com contador do que está aguardando: a gestão do projeto (responsável, grupo responsável ou administrador) aprova ou recusa cada custo, com comentário opcional que a equipe vê na tarefa. Também dá para aprovar direto na tarefa.
+- Só o custo aprovado entra no financeiro do projeto: ele vira um custo nativo do projeto (ProjectCost), aparece em Custos avulsos com o link da tarefa e soma no custo total. Pendentes e recusados não contam. Custo lançado pela própria gestão já entra aprovado.
+- Disponível nos projetos com controle financeiro ("Custo financeiro" ou "Horas + custo"). Quem lança vê o valor do próprio custo; os demais membros não veem valores.
+- Quem lançou pode remover o custo enquanto aguarda; a gestão remove qualquer um (o aprovado sai também do financeiro). Se o custo nativo for apagado em outra tela, o da tarefa fica como "Removido do projeto".
+- Nova tabela `glpi_plugin_projectflow_taskcosts`, criada também automaticamente no primeiro uso (não precisa reinstalar o plugin).
+
+### Carga de trabalho (novo)
+
+- Nova tela **Carga de trabalho** (atalho no cabeçalho e no portfólio) e nova aba **Carga** em cada projeto: horas planejadas das tarefas contra a capacidade de cada pessoa, semana a semana, com destaque para quem está acima de 100%.
+- As horas da tarefa (duração planejada) são espalhadas pelos dias úteis entre o início e o fim planejados e divididas entre os responsáveis. Grupos e tarefas sem responsável aparecem em linhas próprias.
+- **Restante** (padrão) conta só o que falta (duração × % pendente), de hoje até o prazo; tarefas atrasadas contam no próximo dia útil. **Planejado** mostra o plano original, incluindo tarefas concluídas.
+- Capacidade pelo calendário do GLPI da entidade do usuário (dias úteis e feriados), limitada pela nova configuração **Capacidade diária por pessoa** (padrão 8 h). Sem calendário: segunda a sexta.
+- Na aba do projeto, a carga de outros projetos da mesma pessoa aparece em cinza. Tarefas de projetos que o usuário não pode ver entram só como horas, sem nome.
+- Clique na pessoa para ver as tarefas e as horas de cada semana; filtros por projeto e grupo na tela global; navegação por período de 4, 8 ou 12 semanas.
+- Indicador de tarefas **sem estimativa** (sem duração planejada), que não entram na conta.
+
+### Correção: template com tarefas duplicadas (glpi-project/glpi#23423)
+
+- No GLPI 11.0.4 a 11.0.7, criar um projeto a partir de um template duplicava as subtarefas dentro do próprio template a cada uso. O plugin agora tira um retrato das tarefas do template antes da cópia e remove, logo depois, as que o GLPI criou nele por engano. O template continua com exatamente as tarefas que tinha.
+- Cada limpeza é registrada em `files/_log/projectflow.log`. Nas versões já corrigidas do GLPI (11.0.11 ou superior) a proteção não faz nada.
+
+### Manutenção: CSS e JS consolidados
+- Arquivos renomeados para `public/css/projectflow.css` e `public/js/projectflow.js` (sem versão no nome; o cache do navegador continua sendo renovado pelo carimbo de conteúdo).
+- CSS: removidas cerca de 700 regras de telas que não existem mais e as declarações sobrescritas por camadas posteriores (244 KB → 180 KB), formatado em várias linhas e organizado em 14 seções por tela com índice no topo. Ordem de cascata preservada.
+- JS formatado (uma instrução por linha), sem mudança de comportamento.
+- Validação: 89 telas e estados (portfólio, projeto e abas, cronograma, modais, tarefa, composer, central de tarefas, templates, configurações, regras, celular, impressão) comparados pixel a pixel antes/depois — idênticos.
+
+### Atalhos do cabeçalho e Kanban global
+- Os botões do cabeçalho do GLPI em Ferramentas > Projetos (e em todas as telas do plugin) agora abrem as telas do plugin: Adicionar → Novo projeto do portfólio; Padrões → Templates; Minhas tarefas → central de tarefas do plugin; Kanban global → Kanban do portfólio. O menu guardado na sessão é refeito uma vez após a atualização, sem precisar sair e entrar.
+- Portfólio ganhou a visualização Kanban (colunas por estado, com contador e os mesmos filtros); quem pode alterar o projeto arrasta o cartão para outra coluna para mudar o estado.
+- Links diretos: index.php?new=1 abre o Novo projeto e index.php?view=kanban|table|cards escolhe a visualização.
+- Continuam abrindo o GLPI de propósito: "Lista nativa" e "Abrir no GLPI".
+
+### Relatório de status (antigo Relatório semanal)
+- O relatório virou um documento: cabeçalho com projeto, período, gerente, prazo e selo de status (No prazo / Atenção / Crítico); frase-título; indicadores (andamento, entregas, atrasos, horas e consumo das horas previstas); resumo executivo; entregas concluídas (com dias antes/depois do prazo); riscos e pontos de atenção por severidade; tarefas em andamento com responsável, andamento, prazo e último registro; reuniões com decisões e pendências; próximos passos.
+- Período: Semana (com seletor) ou Projeto inteiro. O status segue a saúde definida à mão no projeto ou, em automático, os fatos do relatório (prazo vencido, atrasos, horas, pontos de atenção, pausa).
+- Gerar com IA: o plugin calcula todos os números e envia ao Gemini só um resumo compacto dos fatos (bem menor que antes). A IA devolve, em formato estruturado, título, resumo executivo, destaques, riscos com ação recomendada, próximos passos priorizados com responsável/prazo e o que depende de decisão do cliente. Os números exibidos são sempre do sistema.
+- Mais rápido: resposta curta e estruturada, raciocínio limitado, nova tentativa automática e cache — se os dados não mudaram, a mesma análise volta na hora (com opção "Gerar nova análise"). Modelos que não aceitam algum recurso são detectados e lembrados.
+- Copiar para e-mail (com formatação), PDF (imprime só o documento), Editar texto e Salvar versão (a versão guarda o documento completo; versões antigas em texto continuam abrindo).
+
+### Lista de tarefas do projeto
+- Seta ao lado das tarefas com subtarefas para mostrar ou ocultar os filhos (recolhe a árvore inteira abaixo), e botões no cabeçalho para expandir ou recolher tudo. O que ficou recolhido é lembrado por projeto no navegador; durante a busca todas as tarefas que casam aparecem.
+
+### Cronograma: planejado x real
+- Datas reais na tarefa (bloco Planejamento): "Início real" e "Fim real". O GLPI já as preenche pelo andamento (estado); a gestão do projeto (quem pode alterar o projeto, exceto o executor da tarefa, e sempre o gerente) pode corrigir. Para os demais aparecem só para leitura. Fim real antes do início é recusado.
+- No Cronograma, seletor Planejado / Real / Comparar (lembrado no navegador). Real: barras verdes do início ao fim real; tarefa iniciada e não concluída segue listrada até hoje; marco entregue em losango verde; "Não iniciada" quando não há início real. Comparar: planejado como contorno em cima e real embaixo na mesma linha.
+- Na coluna da tarefa, no Real e no Comparar, selo com a diferença do fim real para a data limite (+3d depois, -2d antes, "no prazo"); ao lado da barra, a diferença do início.
+- Tarefas só com datas reais também entram no cronograma. Uma tarefa com fim real deixa de mostrar atraso no planejado.
+
+### Tela da tarefa: acompanhamento único
+- Visual no padrão do chamado do GLPI: linha do tempo com balões e cores do próprio GLPI (comentário cinza, execução na cor de tarefa, reunião lilás, dependência azul), selo "Criado em … por …", ícone de fundo por tipo e botões de editar/remover que aparecem ao passar o mouse; acompanhamento vazio com atalhos para comentar, lançar execução, reunião ou dependência.
+- Cabeçalho com etiquetas de estado, prioridade, data limite (vermelha quando atrasada), andamento e ponto de atenção. Painel da direita em blocos recolhíveis (Tarefa, Planejamento, Descrição e atenção, Atores). No menu, "Tarefas do projeto" virou "Subtarefas" (é o que a aba mostra).
+- As abas Execuções, Reuniões e Dependências saíram do menu da tarefa. Tudo entra pelo botão Responder (Responder, Adicionar execução, Adicionar reunião e o novo Adicionar dependência) e aparece no acompanhamento, junto dos comentários, do mais recente para o mais antigo.
+- Cada tipo tem seu cartão: execução (azul, duração e dia trabalhado), reunião (roxo, horário, participantes, resumo, decisões e pendências) e dependência (cinza, link para a outra tarefa, tipo, quem criou e quando). Editar uma execução ou reunião abre o mesmo formulário do Responder já preenchido.
+- O botão de ação segue a preferência do GLPI "Layout do botão de ação" (Minhas configurações): Mesclar mostra Responder com o menu; Dividido mostra um botão por ação (Responder, Execução, Reunião, Dependência), como nos chamados.
+- Filtros no topo do acompanhamento: Tudo, Comentários, Execuções, Reuniões, Dependências e "Só os meus".
+- Corrigido: adicionar dependência dava erro 500 (o GLPI exige o identificador único das duas tarefas no vínculo).
+
+### Regras de negócios (Administração > Regras)
+- Duas novas entradas em "Outras regras": "Pellissari Project - Regras de negócios para projetos" e "Pellissari Project - Regras de negócios para tarefas de projeto", com a tela nativa de regras do GLPI (critérios, ações, ordem, entidade/recursiva, testar, importar/exportar).
+- Cada regra escolhe quando roda: Criação, Atualização ou as duas. Na atualização, como nas regras de chamados, a regra só é avaliada quando muda um campo usado em algum critério.
+- Projetos — critérios: nome, código, descrição, entidade, tipo, estado, prioridade, gerente, grupo gerente, template de origem, portfólio, risco, saúde, modo de execução e contabilização. Ações: estado, prioridade, tipo, gerente, grupo gerente, adicionar usuário/grupo à equipe, portfólio, patrocinador, risco, saúde, modo de execução, contabilização e "Aplicar template" (na criação, copia as tarefas do template com hierarquia, dados da tarefa e equipe; datas deslocadas pelo início do projeto).
+- Tarefas — critérios: nome, descrição, projeto, tipo/risco/portfólio do projeto, estado, tipo, prioridade, marco, é subtarefa e responsável. Ações: estado, tipo, prioridade, marco, ponto de atenção (com nota) e adicionar usuário/grupo à equipe da tarefa.
+- Valem para projetos e tarefas criados ou alterados pelo Pellissari Project, pelo formulário nativo do GLPI ou pela API. Templates (e as tarefas deles) não passam pelas regras. As regras do plugin são removidas na desinstalação.
+
+### Resumo do projeto
+- Aba Resumo redesenhada em grade alinhada (todos os cards de uma linha com a mesma altura, cabeçalho com ícone e contador e rodapé com atalho): "Andamento do projeto" com anel de progresso, distribuição das tarefas por estado e linha do prazo (início, prazo, dias restantes e marcador de hoje); "Indicadores" clicáveis (em aberto, concluídas, em atraso com o maior atraso, atenção); "Precisa de atenção" (atrasadas com dias de atraso e pontos de atenção); "Próximas entregas" (data, prazo relativo, % feito, estado e aviso de tarefas sem prazo); Equipe, Última reunião (pendências/decisões) e Governança (risco em português, contrato abre o visualizador). O objetivo, que já aparece no topo, saiu do Resumo.
+
 ### Revisão visual
 - Portfólio: o filtro de portfólio não some mais em telas abaixo de 1400px; rótulos dos indicadores (ex.: "Minhas tarefas") quebram linha em vez de serem cortados.
 - Kanban de execução rola dentro do painel em vez de alargar a página inteira.

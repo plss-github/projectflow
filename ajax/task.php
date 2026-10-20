@@ -88,6 +88,20 @@ try {
             }
             projectflow_task_json_response(true, ['message' => 'Membro removido.']);
 
+        case 'cost_add':
+            $res = (new \GlpiPlugin\Projectflow\Service\TaskCostService())->add((int)($input['task_id'] ?? 0), $input);
+            projectflow_task_json_response($res['ok'], $res, $res['ok'] ? 200 : 400);
+
+        case 'cost_decide':
+            $decision = (string)($input['decision'] ?? '');
+            if (!in_array($decision, ['approve', 'reject'], true)) projectflow_task_json_response(false, ['message' => 'Decisão inválida.'], 400);
+            $res = (new \GlpiPlugin\Projectflow\Service\TaskCostService())->decide((int)($input['cost_id'] ?? 0), $decision, (string)($input['comment'] ?? ''));
+            projectflow_task_json_response($res['ok'], $res, $res['ok'] ? 200 : 403);
+
+        case 'cost_delete':
+            $res = (new \GlpiPlugin\Projectflow\Service\TaskCostService())->remove((int)($input['cost_id'] ?? 0));
+            projectflow_task_json_response($res['ok'], $res, $res['ok'] ? 200 : 403);
+
         case 'dependency_add':
             if (!$service->addDependency((int)($input['task_id'] ?? 0), (int)($input['target_id'] ?? 0), (int)($input['type'] ?? 0))) {
                 projectflow_task_json_response(false, ['message' => 'Dependência inválida, duplicada ou criaria um ciclo.'], 400);

@@ -31,6 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             : 'cards'
     );
     Config::set('health_due_soon_days', (string) max(1, min(60, (int) ($_POST['health_due_soon_days'] ?? 7))));
+    $dailyHours = (float) str_replace(',', '.', (string) ($_POST['workload_daily_hours'] ?? '8'));
+    Config::set('workload_daily_minutes', (string) (int) round(max(0.5, min(24, $dailyHours ?: 8)) * 60));
     $stateIds=array_column($refs->getProjectStates(),'id');
     $defaultProjectState=(int)($_POST['default_project_state_id']??0);
     $defaultTaskState=(int)($_POST['default_task_state_id']??0);
@@ -84,6 +86,7 @@ plugin_projectflow_display('config.html.twig', [
     'auto_add_task_member_to_project_team' => Config::bool('auto_add_task_member_to_project_team', true),
     'default_dashboard_view' => (string) Config::get('default_dashboard_view', 'cards'),
     'health_due_soon_days' => Config::int('health_due_soon_days', 7),
+    'workload_daily_hours' => rtrim(rtrim(number_format(Config::int('workload_daily_minutes', 480) / 60, 1, '.', ''), '0'), '.'),
     'default_project_state_id'=>Config::int('default_project_state_id',0),
     'default_task_state_id'=>Config::int('default_task_state_id',0),
     'default_execution_mode'=>(string)Config::get('default_execution_mode','direct'),
