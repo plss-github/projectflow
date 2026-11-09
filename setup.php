@@ -10,7 +10,7 @@ if (!defined('GLPI_ROOT')) {
     die('Direct access not allowed');
 }
 
-define('PLUGIN_PROJECTFLOW_VERSION', '3.5.2');
+define('PLUGIN_PROJECTFLOW_VERSION', '3.5.3');
 define('PLUGIN_PROJECTFLOW_GLPI_MIN', '11.0.0');
 define('PLUGIN_PROJECTFLOW_GLPI_MAX', '11.0.99');
 
@@ -195,7 +195,11 @@ function plugin_projectflow_redefine_menus(array $menus): array
     if (isset($menus['tools']['content'])) {
         unset($menus['tools']['content'][strtolower(Menu::class)]);
     }
-    if (!isset($menus['tools']['content']['project']) || !is_array($menus['tools']['content']['project'])) {
+    // Only take over a real "Projects" entry. For a profile that cannot view projects GLPI may still
+    // create the entry with just the "My tasks" links (no title/page); giving it a page made the menu
+    // render an item without title and crash (underlineShortcutLetter(): null given).
+    $entry = $menus['tools']['content']['project'] ?? null;
+    if (!is_array($entry) || !isset($entry['title']) || !is_string($entry['title']) || $entry['title'] === '' || !Project::canView()) {
         return $menus;
     }
     $page = '/plugins/projectflow/front/index.php';
