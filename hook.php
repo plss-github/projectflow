@@ -53,10 +53,10 @@ function plugin_projectflow_install(): bool
             `priority` TINYINT UNSIGNED NOT NULL DEFAULT 3,
             `attention` TINYINT(1) NOT NULL DEFAULT 0,
             `attention_note` TEXT NULL,
-            `reminder_at` DATETIME NULL,
+            `reminder_at` TIMESTAMP NULL DEFAULT NULL,
             `reminder_email` TINYINT(1) NOT NULL DEFAULT 1,
             `reminder_browser` TINYINT(1) NOT NULL DEFAULT 1,
-            `reminder_sent_at` DATETIME NULL,
+            `reminder_sent_at` TIMESTAMP NULL DEFAULT NULL,
             `reminder_attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
             `allowed_states` VARCHAR(1000) NOT NULL DEFAULT '',
             `date_mod` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -70,10 +70,10 @@ function plugin_projectflow_install(): bool
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'requester_users_id', "INT UNSIGNED NOT NULL DEFAULT 0");
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'attention', "TINYINT(1) NOT NULL DEFAULT 0");
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'attention_note', 'TEXT NULL');
-        projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_at', 'DATETIME NULL');
+        projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_at', 'TIMESTAMP NULL DEFAULT NULL');
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_email', "TINYINT(1) NOT NULL DEFAULT 1");
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_browser', "TINYINT(1) NOT NULL DEFAULT 1");
-        projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_sent_at', 'DATETIME NULL');
+        projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_sent_at', 'TIMESTAMP NULL DEFAULT NULL');
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'reminder_attempts', 'TINYINT UNSIGNED NOT NULL DEFAULT 0');
         projectflow_add_column('glpi_plugin_projectflow_taskmeta', 'allowed_states', "VARCHAR(1000) NOT NULL DEFAULT ''");
     }
@@ -107,8 +107,8 @@ function plugin_projectflow_install(): bool
             `projecttasks_id` INT UNSIGNED NOT NULL,
             `users_id` INT UNSIGNED NOT NULL,
             `content` TEXT NOT NULL,
-            `date_creation` DATETIME NOT NULL,
-            `date_mod` DATETIME NOT NULL,
+            `date_creation` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `date_mod` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             KEY `idx_task` (`projecttasks_id`),
             KEY `idx_user` (`users_id`),
@@ -127,7 +127,7 @@ function plugin_projectflow_install(): bool
             `work_date` DATE NOT NULL,
             `minutes` INT UNSIGNED NOT NULL DEFAULT 0,
             `comment` TEXT NULL,
-            `date_creation` DATETIME NOT NULL,
+            `date_creation` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             KEY `idx_project_date` (`projects_id`,`work_date`),
             KEY `idx_task` (`projecttasks_id`),
@@ -144,14 +144,14 @@ function plugin_projectflow_install(): bool
             `projecttasks_id` INT UNSIGNED NOT NULL DEFAULT 0,
             `users_id` INT UNSIGNED NOT NULL,
             `title` VARCHAR(255) NOT NULL,
-            `start_at` DATETIME NOT NULL,
+            `start_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `duration_minutes` INT UNSIGNED NOT NULL DEFAULT 0,
             `participants` TEXT NULL,
             `summary` TEXT NULL,
             `decisions` TEXT NULL,
             `actions` TEXT NULL,
-            `date_creation` DATETIME NOT NULL,
-            `date_mod` DATETIME NOT NULL,
+            `date_creation` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `date_mod` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             KEY `idx_project_start` (`projects_id`,`start_at`),
             KEY `idx_task` (`projecttasks_id`),
@@ -162,6 +162,7 @@ function plugin_projectflow_install(): bool
     }
 
     \GlpiPlugin\Projectflow\Service\TaskCostService::ensureTable();
+    \GlpiPlugin\Projectflow\Service\ArchiveService::ensureTable();
 
     if (!$DB->tableExists('glpi_plugin_projectflow_taskassets')) {
         $DB->doQuery("CREATE TABLE `glpi_plugin_projectflow_taskassets` (
@@ -170,7 +171,7 @@ function plugin_projectflow_install(): bool
             `itemtype` VARCHAR(100) NOT NULL,
             `items_id` INT UNSIGNED NOT NULL,
             `users_id` INT UNSIGNED NOT NULL,
-            `date_creation` DATETIME NOT NULL,
+            `date_creation` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             UNIQUE KEY `uniq_task_asset` (`projecttasks_id`,`itemtype`,`items_id`),
             KEY `idx_asset` (`itemtype`,`items_id`)
@@ -185,7 +186,7 @@ function plugin_projectflow_install(): bool
             `week_end` DATE NOT NULL,
             `content` LONGTEXT NOT NULL,
             `users_id` INT UNSIGNED NOT NULL,
-            `date_generation` DATETIME NOT NULL,
+            `date_generation` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             KEY `idx_project_week` (`projects_id`,`week_start`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC");
@@ -193,6 +194,9 @@ function plugin_projectflow_install(): bool
 
     \GlpiPlugin\Projectflow\Service\ProgressRuleService::ensureTable();
     \GlpiPlugin\Projectflow\Service\TeamRoleService::ensureTables();
+
+    // GLPI 11 uses TIMESTAMP (timezone aware) everywhere; convert old DATETIME columns.
+    projectflow_migrate_timestamps();
 
     $states = [];
     if ($DB->tableExists('glpi_projectstates')) {
@@ -274,6 +278,46 @@ function plugin_projectflow_install(): bool
     return true;
 }
 
+/**
+ * Converts the DATETIME columns of the plugin tables to TIMESTAMP, the same way as the core
+ * command `php bin/console migration:timestamps` (invalid dates fixed, nullability and default
+ * kept). Safe to run more than once: only tables still holding DATETIME columns are touched.
+ */
+function projectflow_migrate_timestamps(): void
+{
+    global $DB;
+    $columns = $DB->request([
+        'SELECT' => [
+            'table_name AS TABLE_NAME',
+            'column_name AS COLUMN_NAME',
+            'column_default AS COLUMN_DEFAULT',
+            'is_nullable AS IS_NULLABLE',
+        ],
+        'FROM'  => 'information_schema.columns',
+        'WHERE' => [
+            'table_schema' => $DB->dbdefault,
+            'table_name'   => ['LIKE', 'glpi_plugin_projectflow_%'],
+            'data_type'    => 'datetime',
+        ],
+    ]);
+    $alter = [];
+    foreach ($columns as $column) {
+        $table = (string) $column['TABLE_NAME'];
+        $name = (string) $column['COLUMN_NAME'];
+        $nullable = $column['IS_NULLABLE'] === 'YES';
+        $DB->update(
+            $table,
+            [$name => $nullable ? null : '1970-01-01 00:00:01'],
+            [['NOT' => [$name => null]], [$name => ['<', '1970-01-01 00:00:01']]]
+        );
+        $default = $nullable ? 'NULL' : 'CURRENT_TIMESTAMP';
+        $alter[$table][] = 'MODIFY COLUMN ' . $DB->quoteName($name) . ' TIMESTAMP ' . ($nullable ? 'NULL' : 'NOT NULL') . ' DEFAULT ' . $default;
+    }
+    foreach ($alter as $table => $parts) {
+        $DB->doQuery('ALTER TABLE ' . $DB->quoteName($table) . ' ' . implode(', ', $parts));
+    }
+}
+
 function projectflow_add_column(string $table, string $field, string $definition): void
 {
     global $DB;
@@ -294,6 +338,7 @@ function plugin_projectflow_uninstall(): bool
     }
     foreach ([
         'glpi_plugin_projectflow_taskcosts',
+        'glpi_plugin_projectflow_archives',
         'glpi_plugin_projectflow_progressrules',
         'glpi_plugin_projectflow_teamroles',
         'glpi_plugin_projectflow_roles',
@@ -362,6 +407,7 @@ function plugin_projectflow_item_purge(CommonDBTM $item): void
             'glpi_plugin_projectflow_meetings' => ['projects_id' => $id],
             'glpi_plugin_projectflow_weeklyreports' => ['projects_id' => $id],
             'glpi_plugin_projectflow_taskcosts' => ['projects_id' => $id],
+            'glpi_plugin_projectflow_archives' => ['projects_id' => $id],
         ];
         foreach ($tables as $table => $where) {
             if ($DB->tableExists($table)) {
@@ -530,4 +576,46 @@ function plugin_projectflow_repair_task_planning_dates(): void
     } catch (\Throwable $e) {
         \Toolbox::logError('[Project Flow] planning dates repair: ' . $e->getMessage());
     }
+}
+
+
+/**
+ * Campos do Project Flow na pesquisa nativa de projetos (tela do portfólio e lista nativa).
+ */
+function plugin_projectflow_getAddSearchOptionsNew($itemtype): array
+{
+    if ($itemtype !== Project::class) {
+        return [];
+    }
+    $meta = 'glpi_plugin_projectflow_projectmeta';
+    return [
+        ['id' => 'projectflow', 'name' => 'Project Flow'],
+        [
+            'id' => '76601',
+            'table' => $meta,
+            'field' => 'portfolio',
+            'name' => 'Portfólio',
+            'datatype' => 'string',
+            'massiveaction' => false,
+            'joinparams' => ['jointype' => 'child'],
+        ],
+        [
+            'id' => '76602',
+            'table' => $meta,
+            'field' => 'sponsor',
+            'name' => 'Patrocinador',
+            'datatype' => 'string',
+            'massiveaction' => false,
+            'joinparams' => ['jointype' => 'child'],
+        ],
+        [
+            'id' => '76603',
+            'table' => \GlpiPlugin\Projectflow\Service\ArchiveService::TABLE,
+            'field' => 'date_archived',
+            'name' => 'Arquivado em',
+            'datatype' => 'datetime',
+            'massiveaction' => false,
+            'joinparams' => ['jointype' => 'child'],
+        ],
+    ];
 }

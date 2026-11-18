@@ -87,8 +87,9 @@ class ReferenceService
         foreach($DB->request(['SELECT'=>['id','completename','name'],'FROM'=>ITILCategory::getTable(),'WHERE'=>$where,'ORDERBY'=>['completename ASC','name ASC'],'LIMIT'=>max(1,min($limit,2000))]) as $r)$rows[]=['id'=>(int)$r['id'],'name'=>(string)(($r['completename']??'')?:($r['name']??('Categoria #'.$r['id'])))]; return $rows;
     }
 
-    public function getTemplates(): array
+    public function getTemplates(bool $includeArchived = false): array
     {
+        $archived = ArchiveService::archivedIds();
         global $DB;
         $rows = [];
         $table = Project::getTable();
@@ -98,6 +99,7 @@ class ReferenceService
             $p = new Project();
             $p->getFromResultSet($r);
             if (!$p->canViewItem()) continue;
+            if (!$includeArchived && isset($archived[(int) $r['id']])) continue;
             $raw[] = [$r, $p->canUpdateItem()];
         }
         $ids = array_map(static fn(array $x): int => (int) $x[0]['id'], $raw);
@@ -137,6 +139,7 @@ class ReferenceService
                 'use_url' => PLUGIN_PROJECTFLOW_WEBDIR . '/front/index.php?template=' . $id,
                 'tasks_count' => (int) ($taskStats[$id]['count'] ?? 0),
                 'can_update' => $canUpdate,
+                'is_archived' => isset($archived[$id]),
             ];
         }
         return $rows;

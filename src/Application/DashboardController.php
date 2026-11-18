@@ -3,6 +3,7 @@
 namespace GlpiPlugin\Projectflow\Application;
 
 use GlpiPlugin\Projectflow\Config;
+use GlpiPlugin\Projectflow\Service\PortfolioService;
 use GlpiPlugin\Projectflow\Service\ProjectService;
 use GlpiPlugin\Projectflow\Service\ReferenceService;
 use Project;
@@ -10,19 +11,23 @@ use Session;
 
 class DashboardController
 {
-    public function index(): array
+    public function index(array $get = [], bool $archived = false): array
     {
-        $service = new ProjectService();
-        $projects = $service->getAccessibleProjects(Config::int('dashboard_limit',250));
         $refs = new ReferenceService();
-        $portfolios = array_values(array_unique(array_filter(array_map(static fn($p)=>$p['portfolio'],$projects))));
-        natcasesort($portfolios);
+        $target = PLUGIN_PROJECTFLOW_WEBDIR . '/front/' . ($archived ? 'archived.php' : 'index.php');
+        $page = (new PortfolioService())->page($get, $archived, $target);
+        $projects = $page['projects'];
+        $portfolios = [];
         return [
             'projects'=>$projects,
-            'stats'=>$service->getDashboardStats($projects),
+            'stats'=>$page['stats'],
+            'page'=>$page,
+            'archived_mode'=>$archived,
+            'archived_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/archived.php',
+            'portfolio_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/index.php',
             'states'=>$refs->getProjectStates(),
             'priorities'=>$refs->getPriorities(),
-            'users'=>$refs->getUsers(),
+            'manager_dropdown'=>\User::dropdown(['name'=>'users_id','right'=>'all','display'=>false,'width'=>'100%','display_emptychoice'=>true,'emptylabel'=>'Não definido']),
             'groups'=>$refs->getGroups(),
             'entities'=>$refs->getEntities(),
             'project_types'=>$refs->getProjectTypes(),
@@ -34,7 +39,7 @@ class DashboardController
             'ajax_project_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/ajax/project.php',
             'my_tasks_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/tasks.php?scope=mine',
             'tasks_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/tasks.php?scope=mine',
-            'workload_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/workload.php',
+            'workload_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/workload.php','manager_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/manager.php',
             'templates_url'=>PLUGIN_PROJECTFLOW_WEBDIR.'/front/templates.php',
             'csrf_token'=>Session::getNewCSRFToken(),
             'compact_cards'=>Config::bool('compact_cards'),

@@ -1,5 +1,59 @@
 # Changelog
 
+## 3.5.5 - 2026-11-18
+
+### Datas no padrão do GLPI 11 (timestamps)
+
+- As tabelas do plugin passam a usar `TIMESTAMP` (com fuso horário), como o GLPI 11, em vez de `DATETIME`. Instalações novas já são criadas assim.
+- Ao **Atualizar** o plugin, as colunas antigas são convertidas automaticamente, com o mesmo procedimento do `php bin/console migration:timestamps` do GLPI (os dados são mantidos). O GLPI deixa de pedir essa migração por causa do plugin.
+
+## 3.5.4 - 2026-11-13
+
+### Central do gestor (nova tela)
+
+- Nova tela **Central do gestor** (cabeçalho de Projetos e menu do portfólio): reúne num lugar só todos os projetos em que a pessoa é o **Responsável** ou em que o **grupo responsável** é um dos grupos dela (projetos arquivados ficam de fora).
+- **Painel de abertura**: saudação, situação da carteira numa frase, nota de **saúde da carteira** (0 a 100) e quantos projetos estão saudáveis, em atenção e críticos.
+- **Indicadores**: projetos ativos, em risco (com quantos têm atraso previsto), entregas na semana, tarefas atrasadas e sem responsável, horas usadas x previstas e custos aguardando aprovação (R$).
+- **Mapa da carteira**: cada projeto num gráfico de % concluído x % do prazo decorrido, com a linha "no ritmo" e a zona "atrás do ritmo". Saúde por cor **e** forma (círculo, triângulo, losango), detalhes ao passar o mouse e clique para abrir o projeto.
+- **Precisa da sua decisão**, resolvido na própria tela: aprovar ou recusar custos (com comentário), adiar (+2 dias, +1 semana ou data) ou concluir tarefas atrasadas, atribuir responsável a tarefas sem ninguém (busca nativa de usuários) e ver projetos parados há 14 dias ou mais.
+- **Todos os projetos**: saúde, estado editável na linha, barra de andamento com a marca do prazo decorrido, **previsão de término pelo ritmo atual** (dias de atraso ou de folga), horas x orçamento, tarefas atrasadas, próxima entrega e último movimento. Filtros rápidos, busca e ordenação por coluna.
+- **Próximos 14 dias**: entregas, marcos, prazos de projeto e reuniões, dia a dia.
+- **Equipe**: carga desta semana e da próxima contra a capacidade de cada pessoa que trabalha nesses projetos.
+- **Resumo executivo com IA** (Gemini, quando configurado): briefing da carteira com prioridades do dia, riscos com ação recomendada e boas notícias. Usa só os números do plugin e fica em cache enquanto os dados não mudam.
+- Quem tem leitura de todos os projetos (ou é administrador) pode **ver a central de outro gestor**.
+
+### Portfólio com pesquisa nativa e paginação
+
+- A tela de projetos usa a **pesquisa nativa do GLPI** (critérios, regras, grupos, mesmas permissões e entidades da lista nativa) no lugar da busca e dos filtros antigos. Os campos **Portfólio**, **Patrocinador** e **Arquivado em** do Project Flow também aparecem na pesquisa nativa de projetos.
+- **Paginação nativa**: só a página atual é montada, com o tamanho de "Resultados por página" do GLPI. Em ambientes com muitos projetos a tela abre rápido (3.300 projetos em ~0,5 s no laboratório).
+- Os indicadores (Visíveis, Ativos, Em atraso, Em atenção, Favoritos) contam todos os projetos encontrados pela pesquisa e viram atalhos que filtram a lista inteira, não só a página.
+- A pesquisa fica guardada ao voltar para a tela; o "x" da pesquisa limpa tudo.
+- Os cards ocupam toda a largura da tela, sem sobra à direita, em qualquer resolução.
+
+### Pesquisa nativa na Execução (lista)
+
+- Em **Execução > Lista**, painel **Pesquisa avançada** com a pesquisa nativa de tarefas do GLPI. A lista mostra só as tarefas encontradas (com as tarefas-pai em cinza, para dar contexto) e um link para limpar.
+
+### Responsável do projeto
+
+- O campo **Responsável** (configurações do projeto, criar projeto e templates) usa o seletor nativo do GLPI: pesquisa por nome, login ou e-mail e mostra o responsável atual mesmo quando ele não estava na lista. Antes, salvar as configurações podia apagar o responsável.
+
+### Arquivar projetos e templates
+
+- Botão **Arquivar** no topo do projeto, com confirmação. O projeto arquivado sai do portfólio, do Kanban global, de Minhas tarefas e da Carga de trabalho e abre só para leitura, com faixa "Projeto arquivado" e botão **Desarquivar**.
+- Nova tela **Arquivados** (atalho no cabeçalho, ao lado do Kanban global, e no menu do portfólio), com a mesma pesquisa e paginação.
+- Templates também podem ser arquivados (menu ⋮ do card em Templates): deixam de aparecer na escolha de template. Ficam numa seção "Templates arquivados" com **Desarquivar**.
+- Nova tabela `glpi_plugin_projectflow_archives`.
+
+### Escolha de template
+
+- Caixa **Pesquisar template** no menu "Novo projeto" (filtra pelo nome; Enter abre o primeiro) e campo Template pesquisável no formulário de criação.
+
+## 3.5.3 - 2026-11-09
+
+- Correção: perfis sem acesso a projetos davam erro no menu (underlineShortcutLetter(): null given) com o plugin ativo.
+- Botões secundários das telas do plugin sempre amarelos, com só um realce leve ao passar o mouse.
+
 ## 3.5.2 - 2026-10-20
 
 ### Custos nas tarefas com aprovação (novo)

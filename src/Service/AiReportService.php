@@ -28,9 +28,76 @@ class AiReportService
     private const RETRY_DELAYS = [2, 5];
     private const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
+    /** Prompt/schema override for non-project calls (portfolio summary of the manager central). */
+    private ?array $profile = null;
+
     public function __construct(
         private readonly WeeklyReportService $reports = new WeeklyReportService(),
     ) {}
+
+    /**
+     * Executive summary of a manager's whole portfolio (Central do gestor). Receives the compact
+     * fact sheet from ManagerService::aiFacts and returns {titulo, resumo, prioridades[], riscos[],
+     * boas_noticias[]}, cached by facts.
+     */
+    public function generatePortfolio(array $facts, bool $force = false): array
+    {
+        if (!self::isEnabled()) throw new RuntimeException('A geração por IA não está configurada. Informe a chave do Gemini nas Configurações do Project Flow.');
+        @set_time_limit(120);
+        $t0 = microtime(true);
+        $model = self::getModel();
+        $cacheKey = sha1('portfolio-v1|' . $model . '|' . trim((string) Config::get('ai_instructions', '')) . '|' . json_encode($facts, JSON_UNESCAPED_UNICODE));
+        $meta = ['cached' => false, 'attempts' => 0, 'used_fallback' => false, 'tokens_in' => 0, 'tokens_out' => 0, 'model' => $model];
+        $ai = $force ? null : $this->cacheGet($cacheKey);
+        if ($ai !== null) {
+            $meta = ['cached' => true] + ($ai['_meta'] ?? []) + $meta;
+        } else {
+            $str = ['type' => 'STRING'];
+            $this->profile = [
+                'label' => 'Fatos da carteira de projetos do gestor (JSON)',
+                'keys' => 'titulo, resumo, prioridades[{acao,projeto,motivo}], riscos[{titulo,projeto,acao,severidade}], boas_noticias[]',
+                'prompt' => <<<TXT
+Você é um PMO sênior assessorando um gestor que é responsável por vários projetos de TI. Escreva, em português do Brasil, o briefing executivo da carteira dele para hoje.
+Regras:
+- Use SOMENTE os fatos recebidos. Não invente projetos, tarefas, datas, pessoas ou números.
+- "titulo": uma frase de até 110 caracteres com a situação real da carteira.
+- "resumo": 2 a 4 frases: como a carteira está, onde está o maior risco e o que o gestor deve fazer primeiro.
+- "prioridades": até 5 ações para o gestor fazer HOJE/nesta semana, em ordem de importância, cada uma com o projeto e o motivo (verbo no infinitivo, objetivo).
+- "riscos": até 4 riscos da carteira (projeto com atraso previsto, tarefas muito atrasadas, pessoas sobrecarregadas, projetos parados), com ação recomendada e "severidade" alta, media ou baixa.
+- "boas_noticias": até 3 pontos positivos concretos (vazio se não houver).
+- Cite projetos e tarefas pelo nome. Sem Markdown, sem IDs, sem e-mails.
+TXT,
+                'schema' => [
+                    'type' => 'OBJECT',
+                    'properties' => [
+                        'titulo' => $str, 'resumo' => $str,
+                        'prioridades' => ['type' => 'ARRAY', 'items' => ['type' => 'OBJECT', 'properties' => ['acao' => $str, 'projeto' => $str, 'motivo' => $str], 'required' => ['acao']]],
+                        'riscos' => ['type' => 'ARRAY', 'items' => ['type' => 'OBJECT', 'properties' => ['titulo' => $str, 'projeto' => $str, 'acao' => $str, 'severidade' => ['type' => 'STRING', 'enum' => ['alta', 'media', 'baixa']]], 'required' => ['titulo', 'acao', 'severidade']]],
+                        'boas_noticias' => ['type' => 'ARRAY', 'items' => $str],
+                    ],
+                    'required' => ['titulo', 'resumo', 'prioridades', 'riscos', 'boas_noticias'],
+                ],
+            ];
+            try {
+                $ai = $this->ask($facts, $meta);
+            } finally {
+                $this->profile = null;
+            }
+            $ai['_meta'] = array_intersect_key($meta, array_flip(['model', 'tokens_in', 'tokens_out', 'used_fallback']));
+            $this->cachePut($cacheKey, $ai);
+        }
+        $clean = static fn($v) => trim(strip_tags((string) $v));
+        $out = [
+            'titulo' => $clean($ai['titulo'] ?? ''),
+            'resumo' => $clean($ai['resumo'] ?? ''),
+            'prioridades' => [], 'riscos' => [], 'boas_noticias' => [],
+        ];
+        foreach (array_slice((array) ($ai['prioridades'] ?? []), 0, 5) as $p) if (is_array($p) && $clean($p['acao'] ?? '') !== '') $out['prioridades'][] = ['acao' => $clean($p['acao']), 'projeto' => $clean($p['projeto'] ?? ''), 'motivo' => $clean($p['motivo'] ?? '')];
+        foreach (array_slice((array) ($ai['riscos'] ?? []), 0, 4) as $r) if (is_array($r) && $clean($r['titulo'] ?? '') !== '') $out['riscos'][] = ['titulo' => $clean($r['titulo']), 'projeto' => $clean($r['projeto'] ?? ''), 'acao' => $clean($r['acao'] ?? ''), 'severidade' => in_array($r['severidade'] ?? '', ['alta', 'media', 'baixa'], true) ? $r['severidade'] : 'media'];
+        foreach (array_slice((array) ($ai['boas_noticias'] ?? []), 0, 3) as $b) if ($clean($b) !== '') $out['boas_noticias'][] = $clean($b);
+        $out['meta'] = $meta + ['ms' => (int) round((microtime(true) - $t0) * 1000)];
+        return $out;
+    }
 
     // ---------------------------------------------------------------- configuration
 
@@ -154,6 +221,10 @@ class AiReportService
 
     private function systemPrompt(): string
     {
+        if ($this->profile !== null) {
+            $extra = trim((string) Config::get('ai_instructions', ''));
+            return $extra !== '' ? $this->profile['prompt'] . "\n\nInstruções adicionais da empresa:\n" . $extra : $this->profile['prompt'];
+        }
         $base = <<<TXT
 Você é um PMO sênior de uma consultoria de TI. Escreva a parte narrativa de um relatório de status para diretoria e cliente, em português do Brasil.
 Regras:
@@ -174,6 +245,7 @@ TXT;
 
     private function schema(): array
     {
+        if ($this->profile !== null) return $this->profile['schema'];
         $str = ['type' => 'STRING'];
         return [
             'type' => 'OBJECT',
@@ -242,8 +314,8 @@ TXT;
             if (empty($cap['no_thinking'])) $gen['thinkingConfig'] = ['thinkingBudget' => 512];
             $body = [
                 'systemInstruction' => ['parts' => [['text' => $this->systemPrompt()]]],
-                'contents' => [['role' => 'user', 'parts' => [['text' => "Fatos do projeto (JSON):\n" . json_encode($facts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-                    . (empty($cap['no_schema']) ? '' : "\n\nResponda SOMENTE com um JSON com as chaves: titulo, resumo, destaques[], riscos[{titulo,impacto,acao,severidade}], proximos_passos[{acao,responsavel,prazo}], decisoes_cliente[].")]]]],
+                'contents' => [['role' => 'user', 'parts' => [['text' => ($this->profile['label'] ?? 'Fatos do projeto (JSON)') . ":\n" . json_encode($facts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                    . (empty($cap['no_schema']) ? '' : "\n\nResponda SOMENTE com um JSON com as chaves: " . ($this->profile['keys'] ?? 'titulo, resumo, destaques[], riscos[{titulo,impacto,acao,severidade}], proximos_passos[{acao,responsavel,prazo}], decisoes_cliente[]') . ".")]]]],
                 'generationConfig' => $gen,
             ];
             try {

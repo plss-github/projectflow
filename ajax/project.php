@@ -38,6 +38,9 @@ try {
         projectflow_json_response(false, ['message' => 'Token de segurança inválido ou expirado. Recarregue a página e tente novamente.'], 403);
     }
     $service = new ProjectService();
+    if (\GlpiPlugin\Projectflow\Service\ArchiveService::blocksWrite('project', $action, $input)) {
+        projectflow_json_response(false, ['message' => 'Projeto arquivado: está só para leitura. Desarquive para editar.'], 403);
+    }
 
     switch ($action) {
         case 'create':
@@ -59,6 +62,13 @@ try {
             $id = (int)($input['id'] ?? 0);
             if ($id <= 0 || !$service->update($id, $input)) projectflow_json_response(false, ['message' => 'Não foi possível atualizar o projeto.'], 400);
             projectflow_json_response(true, ['id' => $id, 'message' => 'Projeto atualizado com sucesso.']);
+
+        case 'archive':
+        case 'unarchive':
+            $archive = new \GlpiPlugin\Projectflow\Service\ArchiveService();
+            $id = (int)($input['id'] ?? 0);
+            $res = $action === 'archive' ? $archive->archive($id) : $archive->unarchive($id);
+            projectflow_json_response($res['ok'], $res, $res['ok'] ? 200 : 403);
 
         case 'favorite':
             $id = (int)($input['id'] ?? 0);

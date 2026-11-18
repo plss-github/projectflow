@@ -1,0 +1,340 @@
+{% set s = summary %}
+{% set healthLabel = {'good': 'Saudável', 'attention': 'Atenção', 'critical': 'Crítico'} %}
+{% set healthIcon = {'good': 'ti-circle-check', 'attention': 'ti-alert-triangle', 'critical': 'ti-alert-octagon'} %}
+<div class="pf-app pf-mgr" id="pf-manager"
+     data-task-endpoint="{{ urls.ajax_task }}" data-project-endpoint="{{ urls.ajax_project }}" data-manager-endpoint="{{ urls.ajax_manager }}"
+     data-csrf="{{ csrf_token }}" data-manager="{{ manager_id }}" data-finished-state="{{ finished_state_id }}">
+
+  <nav class="pf-dash-menu" aria-label="Navegação">
+    <a class="pf-dash-menu-link" href="{{ urls.portfolio }}"><i class="ti ti-layout-grid"></i> Portfólio</a>
+    <a class="pf-dash-menu-link" href="{{ urls.tasks }}"><i class="ti ti-list-check"></i> Minhas tarefas</a>
+    <a class="pf-dash-menu-link" href="{{ urls.workload }}"><i class="ti ti-chart-bar"></i> Carga de trabalho</a>
+    {% if can_view_others %}
+      <form class="pf-mgr-viewas" method="get" action="{{ urls.self }}">
+        <label><i class="ti ti-eye"></i> Ver a central de</label>
+        {{ manager_dropdown|raw }}
+      </form>
+    {% endif %}
+  </nav>
+
+  {# ------------------------------------------------------------------ hero #}
+  <section class="pf-mgr-hero">
+    <div class="pf-mgr-hero-text">
+      <div class="pf-mgr-eyebrow">Central do gestor</div>
+      <h1><span class="pf-mgr-hero-icon"><i class="ti ti-layout-dashboard"></i></span>{{ is_self ? 'Minha carteira de projetos' : 'Carteira de ' ~ manager_name }}</h1>
+      <p class="pf-mgr-sub"><i class="ti ti-user"></i> {{ manager_name }} <span>·</span> <i class="ti ti-folders"></i> {{ s.projects }} projeto(s) <span>·</span> <i class="ti ti-calendar"></i> {{ today_label }}</p>
+      <p class="pf-mgr-headline">{{ headline }}</p>
+      <div class="pf-mgr-hero-actions">
+        {% if s.decisions %}<a class="btn btn-outline-secondary pf-mgr-btn-light" href="#pf-mgr-inbox"><i class="ti ti-gavel"></i> {{ s.decisions }} decisão(ões) {{ is_self ? 'esperando você' : 'pendentes' }}</a>{% endif %}
+        {% if rows is not empty %}<button type="button" class="btn pf-mgr-btn-ai" data-pf-mgr-ai {{ ai_enabled ? '' : 'data-disabled=1' }} title="{{ ai_enabled ? 'Gera um briefing executivo da carteira com o Gemini' : 'Configure a chave do Gemini nas Configurações do Project Flow' }}">
+          <i class="ti ti-sparkles"></i> Resumo executivo com IA
+        </button>{% endif %}
+      </div>
+    </div>
+    {% if rows is not empty %}
+    <div class="pf-mgr-hero-score" aria-label="Saúde da carteira: {{ s.score }} de 100">
+      {% set r = 52 %}{% set c = 2 * 3.14159 * r %}
+      <div class="pf-mgr-ring-wrap">
+      <svg viewBox="0 0 128 128" class="pf-mgr-ring" role="img" aria-hidden="true">
+        <circle cx="64" cy="64" r="{{ r }}" class="pf-mgr-ring-track"/>
+        <circle cx="64" cy="64" r="{{ r }}" class="pf-mgr-ring-value is-{{ s.score >= 75 ? 'good' : (s.score >= 50 ? 'attention' : 'critical') }}"
+                stroke-dasharray="{{ c }}" stroke-dashoffset="{{ c }}" data-pf-ring="{{ c * (1 - s.score / 100) }}"/>
+      </svg>
+      <div class="pf-mgr-ring-label"><strong data-pf-count="{{ s.score }}">{{ s.score }}</strong><small>saúde da carteira</small></div>
+      </div>
+      <ul class="pf-mgr-health-legend">
+        {% for k in ['good', 'attention', 'critical'] %}
+          <li class="is-{{ k }}"><i class="ti {{ healthIcon[k] }}"></i><span>{{ healthLabel[k] }}</span><strong>{{ s.health[k] }}</strong></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </section>
+
+  {# ------------------------------------------------------------------ AI #}
+  <section class="pf-mgr-ai d-none" data-pf-mgr-ai-panel aria-live="polite">
+    <div class="pf-mgr-ai-head">
+      <span><i class="ti ti-sparkles"></i> Briefing executivo</span>
+      <small data-pf-mgr-ai-meta></small>
+      <button type="button" class="btn btn-sm btn-ghost-secondary" data-pf-mgr-ai-force title="Gerar de novo"><i class="ti ti-refresh"></i></button>
+      <button type="button" class="btn btn-sm btn-ghost-secondary" data-pf-mgr-ai-close title="Fechar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="pf-mgr-ai-body" data-pf-mgr-ai-body></div>
+  </section>
+
+  {% if rows is empty %}
+    <section class="pf-mgr-empty card">
+      <i class="ti ti-mood-empty"></i>
+      <h2>Nenhum projeto sob {{ is_self ? 'sua' : 'esta' }} responsabilidade</h2>
+      <p>A central reúne os projetos em que {{ is_self ? 'você é' : 'a pessoa é' }} o Responsável ou em que o grupo responsável é um dos {{ is_self ? 'seus' : 'grupos dela' }}.</p>
+      <a class="btn btn-primary" href="{{ urls.portfolio }}"><i class="ti ti-layout-grid"></i> Ir para o portfólio</a>
+    </section>
+  {% else %}
+
+  {# ------------------------------------------------------------------ KPIs #}
+  <section class="pf-mgr-kpis">
+    <a class="pf-mgr-kpi" href="#pf-mgr-projects" data-pf-mgr-filter="active"><i class="ti ti-briefcase"></i><span><small>Projetos ativos</small><strong data-pf-count="{{ s.active }}">{{ s.active }}</strong><em>{{ s.finished }} concluído(s)</em></span></a>
+    <a class="pf-mgr-kpi is-critical" href="#pf-mgr-projects" data-pf-mgr-filter="risk"><i class="ti ti-alert-octagon"></i><span><small>Em risco</small><strong data-pf-count="{{ s.at_risk }}">{{ s.at_risk }}</strong><em>{{ s.late_projects }} com atraso previsto</em></span></a>
+    <a class="pf-mgr-kpi is-info" href="#pf-mgr-agenda"><i class="ti ti-calendar-event"></i><span><small>Entregas na semana</small><strong data-pf-count="{{ s.deliveries_week }}">{{ s.deliveries_week }}</strong><em>próximos 7 dias</em></span></a>
+    <a class="pf-mgr-kpi is-warning" href="#pf-mgr-inbox" data-pf-mgr-tab="overdue"><i class="ti ti-clock-exclamation"></i><span><small>Tarefas atrasadas</small><strong data-pf-count="{{ s.overdue_tasks }}">{{ s.overdue_tasks }}</strong><em>{{ s.unassigned }} sem responsável</em></span></a>
+    <a class="pf-mgr-kpi" href="#pf-mgr-projects"><i class="ti ti-hourglass"></i><span><small>Horas usadas</small><strong>{{ s.hours_used_label }}</strong><em>{% if s.hours_budget_label %}{{ s.hours_pct }}% de {{ s.hours_budget_label }} previstas{% else %}sem orçamento de horas{% endif %}</em></span>
+      {% if s.hours_pct is not null %}<span class="pf-mgr-kpi-bar"><span style="width: {{ min(100, s.hours_pct) }}%" class="{{ s.hours_pct > 100 ? 'is-over' : '' }}"></span></span>{% endif %}</a>
+    <a class="pf-mgr-kpi is-money" href="#pf-mgr-inbox" data-pf-mgr-tab="costs"><i class="ti ti-currency-dollar"></i><span><small>Custos aguardando</small><strong><small class="pf-mgr-cur">R$</small> {{ s.pending_total }}</strong><em>{{ s.pending_costs }} para aprovar</em></span></a>
+  </section>
+
+  {# ------------------------------------------------------------------ map + inbox #}
+  <section class="pf-mgr-grid">
+    <article class="card pf-mgr-card pf-mgr-map">
+      <header>
+        <div><h2><i class="ti ti-chart-dots-3"></i> Mapa da carteira</h2><p>Quanto cada projeto já entregou contra quanto do prazo já passou. Abaixo da linha = atrás do ritmo.</p></div>
+        <div class="pf-mgr-map-legend" aria-hidden="true">
+          {% for k in ['good', 'attention', 'critical'] %}<span class="is-{{ k }}"><i class="ti {{ healthIcon[k] }}"></i>{{ healthLabel[k] }}</span>{% endfor %}
+        </div>
+      </header>
+      <div class="pf-mgr-map-plot" data-pf-mgr-map data-rows="{{ rows|filter(r => not r.is_finished)|map(r => {id: r.id, name: r.name, code: r.code, url: r.url, health: r.health, progress: r.progress, elapsed: r.elapsed, delta: r.delta_days, plan_end: r.plan_end, forecast: r.forecast, overdue: r.overdue_tasks})|json_encode|e('html_attr') }}"></div>
+      <div class="pf-mgr-map-foot" data-pf-mgr-map-foot></div>
+    </article>
+
+    <article class="card pf-mgr-card pf-mgr-inbox" id="pf-mgr-inbox">
+      <header>
+        <div><h2><i class="ti ti-gavel"></i> Precisa da sua decisão</h2><p>Resolva daqui mesmo, sem abrir projeto por projeto.</p></div>
+      </header>
+      <div class="pf-mgr-tabs" role="tablist">
+        {% set tabs = [
+          {k: 'costs', icon: 'ti-currency-dollar', label: 'Custos', n: inbox.costs|length},
+          {k: 'overdue', icon: 'ti-clock-exclamation', label: 'Atrasadas', n: summary.overdue_tasks},
+          {k: 'unassigned', icon: 'ti-user-question', label: 'Sem responsável', n: summary.unassigned},
+          {k: 'stale', icon: 'ti-zzz', label: 'Parados', n: inbox.stale|length},
+        ] %}
+        {% set firstTab = first_tab %}
+        {% for t in tabs %}
+          <button type="button" role="tab" class="pf-mgr-tab {{ t.k == firstTab ? 'is-active' : '' }}" data-pf-mgr-tabbtn="{{ t.k }}" aria-selected="{{ t.k == firstTab ? 'true' : 'false' }}">
+            <i class="ti {{ t.icon }}"></i> {{ t.label }} <span class="pf-mgr-count {{ t.n ? '' : 'is-zero' }}">{{ t.n }}</span>
+          </button>
+        {% endfor %}
+      </div>
+
+      <div class="pf-mgr-pane {{ firstTab == 'costs' ? '' : 'd-none' }}" data-pf-mgr-pane="costs">
+        {% for c in inbox.costs %}
+          <div class="pf-mgr-item" data-cost-id="{{ c.id }}">
+            <div class="pf-mgr-item-main">
+              <strong>{{ c.name }}</strong>
+              <span class="pf-mgr-item-sub"><a href="{{ c.project_url }}#approvals">{{ c.project_name }}</a> · <a href="{{ c.task_url }}">{{ c.task_name }}</a> · {{ c.user_name }} · há {{ c.age_days }} dia(s)</span>
+              {% if c.comment %}<span class="pf-mgr-item-note">{{ c.comment }}</span>{% endif %}
+              <input type="text" class="form-control form-control-sm pf-mgr-item-comment" placeholder="Comentário da decisão (opcional)" maxlength="500">
+            </div>
+            <div class="pf-mgr-item-side">
+              <span class="pf-mgr-money">R$ {{ c.cost_formatted }}</span>
+              <div class="pf-mgr-item-actions">
+                <button type="button" class="btn btn-sm btn-success" data-pf-cost-decide="approve"><i class="ti ti-check"></i> Aprovar</button>
+                <button type="button" class="btn btn-sm btn-outline-danger" data-pf-cost-decide="reject"><i class="ti ti-x"></i> Recusar</button>
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <div class="pf-mgr-none"><i class="ti ti-circle-check"></i> Nenhum custo esperando aprovação.</div>
+        {% endfor %}
+      </div>
+
+      <div class="pf-mgr-pane {{ firstTab == 'overdue' ? '' : 'd-none' }}" data-pf-mgr-pane="overdue">
+        {% for t in inbox.overdue %}
+          <div class="pf-mgr-item" data-pf-task="{{ t.id }}">
+            <div class="pf-mgr-item-main">
+              <strong><a href="{{ t.url }}">{{ t.name }}</a></strong>
+              <span class="pf-mgr-item-sub">{{ t.project_name }} · {{ t.team ? t.team|join(', ') : 'sem responsável' }} · {{ t.percent }}%</span>
+            </div>
+            <div class="pf-mgr-item-side">
+              <span class="pf-mgr-late"><i class="ti ti-clock-exclamation"></i> {{ t.late_days == 0 ? 'vence hoje' : t.late_days ~ ' dia(s) de atraso' }}</span>
+              <div class="pf-mgr-item-actions">
+                <div class="dropdown">
+                  <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-auto-close="outside"><i class="ti ti-calendar-plus"></i> Adiar</button>
+                  <div class="dropdown-menu dropdown-menu-end pf-mgr-postpone">
+                    <div class="pf-mgr-postpone-quick">
+                      <button type="button" class="btn btn-sm btn-ghost-secondary" data-pf-postpone="2">+2 dias</button>
+                      <button type="button" class="btn btn-sm btn-ghost-secondary" data-pf-postpone="7">+1 semana</button>
+                    </div>
+                    <label class="form-label small mb-1">Nova data de entrega</label>
+                    <div class="d-flex gap-1"><input type="date" class="form-control form-control-sm" data-pf-postpone-date><button type="button" class="btn btn-sm btn-primary" data-pf-postpone="date"><i class="ti ti-check"></i></button></div>
+                  </div>
+                </div>
+                {% if finished_state_id %}<button type="button" class="btn btn-sm btn-outline-success" data-pf-task-done title="Marcar como concluída"><i class="ti ti-circle-check"></i> Concluir</button>{% endif %}
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <div class="pf-mgr-none"><i class="ti ti-circle-check"></i> Nenhuma tarefa atrasada. Bom trabalho.</div>
+        {% endfor %}
+      </div>
+
+      <div class="pf-mgr-pane {{ firstTab == 'unassigned' ? '' : 'd-none' }}" data-pf-mgr-pane="unassigned">
+        {% for t in inbox.unassigned %}
+          <div class="pf-mgr-item" data-pf-task="{{ t.id }}">
+            <div class="pf-mgr-item-main">
+              <strong><a href="{{ t.url }}">{{ t.name }}</a></strong>
+              <span class="pf-mgr-item-sub">{{ t.project_name }}{% if t.end %} · entrega {{ t.end|date('d/m') }}{% endif %}</span>
+            </div>
+            <div class="pf-mgr-item-side">
+              <div class="pf-mgr-item-actions">
+                <button type="button" class="btn btn-sm btn-primary" data-pf-assign data-task-name="{{ t.name }}"><i class="ti ti-user-plus"></i> Atribuir</button>
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <div class="pf-mgr-none"><i class="ti ti-circle-check"></i> Todas as tarefas abertas têm responsável.</div>
+        {% endfor %}
+      </div>
+
+      <div class="pf-mgr-pane {{ firstTab == 'stale' ? '' : 'd-none' }}" data-pf-mgr-pane="stale">
+        {% for p in inbox.stale %}
+          <div class="pf-mgr-item">
+            <div class="pf-mgr-item-main">
+              <strong><a href="{{ p.url }}">{{ p.name }}</a></strong>
+              <span class="pf-mgr-item-sub">{{ p.code }} · {{ p.state.name }} · {{ p.progress }}% concluído</span>
+            </div>
+            <div class="pf-mgr-item-side">
+              <span class="pf-mgr-late is-muted"><i class="ti ti-zzz"></i> {{ p.idle_days }} dias sem movimento</span>
+              <div class="pf-mgr-item-actions"><a class="btn btn-sm btn-outline-secondary" href="{{ p.url }}"><i class="ti ti-external-link"></i> Abrir</a></div>
+            </div>
+          </div>
+        {% else %}
+          <div class="pf-mgr-none"><i class="ti ti-circle-check"></i> Todos os projetos ativos tiveram movimento nos últimos 14 dias.</div>
+        {% endfor %}
+      </div>
+    </article>
+  </section>
+
+  {# ------------------------------------------------------------------ projects #}
+  <section class="card pf-mgr-card pf-mgr-projects" id="pf-mgr-projects">
+    <header>
+      <div><h2><i class="ti ti-table"></i> Todos os projetos</h2><p>Ordenados por risco. Clique no cabeçalho para ordenar; troque o estado direto na linha.</p></div>
+      <div class="pf-mgr-chips" role="group" aria-label="Filtrar projetos">
+        <button type="button" class="pf-mgr-chip is-active" data-pf-mgr-chip="all">Todos <span>{{ rows|length }}</span></button>
+        <button type="button" class="pf-mgr-chip" data-pf-mgr-chip="active">Ativos <span>{{ s.active }}</span></button>
+        <button type="button" class="pf-mgr-chip" data-pf-mgr-chip="risk">Em risco <span>{{ s.health.critical + s.health.attention }}</span></button>
+        <button type="button" class="pf-mgr-chip" data-pf-mgr-chip="late">Atraso previsto <span>{{ s.late_projects }}</span></button>
+        <button type="button" class="pf-mgr-chip" data-pf-mgr-chip="stale">Parados <span>{{ s.stale }}</span></button>
+        <input type="search" class="form-control form-control-sm pf-mgr-filter" placeholder="Filtrar por nome ou código..." data-pf-mgr-search>
+      </div>
+    </header>
+    <div class="table-responsive">
+      <table class="table table-hover pf-mgr-table" data-pf-mgr-table>
+        <thead><tr>
+          <th data-sort="health">Saúde</th>
+          <th data-sort="name">Projeto</th>
+          <th data-sort="state">Estado</th>
+          <th data-sort="progress" class="pf-mgr-col-progress">Andamento x prazo</th>
+          <th data-sort="delta">Previsão</th>
+          <th data-sort="hours">Horas</th>
+          <th data-sort="overdue">Atrasadas</th>
+          <th data-sort="next">Próxima entrega</th>
+          <th data-sort="idle">Movimento</th>
+        </tr></thead>
+        <tbody>
+        {% for r in rows %}
+          <tr data-health="{{ {'critical': 0, 'attention': 1, 'good': 2}[r.health] }}" data-name="{{ r.name|lower }} {{ r.code|lower }}" data-state="{{ r.state.name|lower }}"
+              data-progress="{{ r.progress }}" data-delta="{{ r.delta_days ?? -9999 }}" data-hours="{{ r.hours_pct ?? -1 }}" data-overdue="{{ r.overdue_tasks }}"
+              data-next="{{ r.next_delivery ? r.next_delivery.date : '9999' }}" data-idle="{{ r.idle_days ?? 0 }}"
+              data-flags="{{ r.is_finished ? 'finished' : 'active' }} {{ r.health != 'good' and not r.is_finished ? 'risk' : '' }} {{ (r.delta_days ?? 0) > 0 and not r.is_finished ? 'late' : '' }} {{ r.is_stale ? 'stale' : '' }}"
+              class="{{ r.is_finished ? 'is-finished' : '' }}">
+            <td><span class="pf-mgr-health is-{{ r.health }}" title="{{ healthLabel[r.health] }}"><i class="ti {{ healthIcon[r.health] }}"></i><span>{{ healthLabel[r.health] }}</span></span></td>
+            <td class="pf-mgr-col-name"><a href="{{ r.url }}"><strong>{{ r.name }}</strong></a><small>{{ r.code }}{% if not is_self or r.manager_name != manager_name %} · {{ r.manager_name }}{% endif %}</small></td>
+            <td>
+              {% if r.can_update %}
+                <select class="form-select form-select-sm pf-mgr-state" data-pf-project-state="{{ r.id }}" aria-label="Estado de {{ r.name }}" style="--pf-state: {{ r.state.color }}">
+                  {% for st in states %}<option value="{{ st.id }}" {{ st.id == r.state.id ? 'selected' : '' }}>{{ st.name }}</option>{% endfor %}
+                </select>
+              {% else %}
+                <span class="pf-mgr-state-pill" style="--pf-state: {{ r.state.color }}">{{ r.state.name }}</span>
+              {% endif %}
+            </td>
+            <td class="pf-mgr-col-progress">
+              <div class="pf-mgr-pbar" title="{{ r.progress }}% concluído{% if r.elapsed is not null %} · {{ r.elapsed }}% do prazo decorrido{% endif %}">
+                <span class="pf-mgr-pbar-fill is-{{ r.pace is null or r.pace >= -5 ? 'good' : (r.pace >= -20 ? 'attention' : 'critical') }}" style="width: {{ r.progress }}%"></span>
+                {% if r.elapsed is not null and not r.is_finished %}<span class="pf-mgr-pbar-now" style="left: {{ r.elapsed }}%"></span>{% endif %}
+              </div>
+              <small>{{ r.progress }}%{% if r.elapsed is not null and not r.is_finished %} · prazo {{ r.elapsed }}% decorrido{% endif %}</small>
+            </td>
+            <td>
+              {% if r.is_finished %}<span class="pf-mgr-delta is-good"><i class="ti ti-flag-check"></i> Concluído</span>
+              {% elseif r.delta_days is null %}<span class="text-muted small">{{ r.plan_end ? 'prazo ' ~ r.plan_end|date('d/m/Y') : 'sem prazo' }}</span>
+              {% elseif r.delta_days > 0 %}<span class="pf-mgr-delta is-critical"><i class="ti ti-trending-down"></i> +{{ r.delta_days }} dias</span><small>{{ r.forecast ? 'termina ~' ~ r.forecast|date('d/m') : 'prazo vencido' }}</small>
+              {% else %}<span class="pf-mgr-delta is-good"><i class="ti ti-trending-up"></i> {{ r.delta_days == 0 ? 'no prazo' : (-r.delta_days) ~ ' dias de folga' }}</span><small>prazo {{ r.plan_end|date('d/m') }}</small>{% endif %}
+            </td>
+            <td>
+              <span class="pf-mgr-hours">{{ r.hours_used_label }}{% if r.hours_budget_label %} <small>/ {{ r.hours_budget_label }}</small>{% endif %}</span>
+              {% if r.hours_pct is not null %}<div class="pf-mgr-minibar"><span class="{{ r.hours_pct > 100 ? 'is-over' : (r.hours_pct > r.progress + 15 ? 'is-warn' : '') }}" style="width: {{ min(100, r.hours_pct) }}%"></span></div>{% endif %}
+            </td>
+            <td>{% if r.overdue_tasks %}<span class="pf-mgr-badge is-critical">{{ r.overdue_tasks }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>{% if r.next_delivery %}<a href="{{ r.next_delivery.url }}" class="pf-mgr-next"><strong>{{ r.next_delivery.date|date('d/m') }}</strong> {{ r.next_delivery.name }}</a>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>{% if r.idle_days is null %}<span class="text-muted">—</span>{% elseif r.idle_days == 0 %}<span class="pf-mgr-fresh">hoje</span>{% else %}<span class="{{ r.is_stale ? 'pf-mgr-stale' : '' }}">há {{ r.idle_days }} d</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <div class="pf-mgr-none d-none" data-pf-mgr-table-empty><i class="ti ti-filter-off"></i> Nenhum projeto com esse filtro.</div>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ agenda + team #}
+  <section class="pf-mgr-grid is-bottom">
+    <article class="card pf-mgr-card pf-mgr-agenda" id="pf-mgr-agenda">
+      <header><div><h2><i class="ti ti-calendar-week"></i> Próximos 14 dias</h2><p>Entregas, marcos, prazos de projeto e reuniões.</p></div>
+        <div class="pf-mgr-agenda-legend"><span class="k-delivery"><i class="ti ti-checkbox"></i> Entrega</span><span class="k-milestone"><i class="ti ti-diamond"></i> Marco</span><span class="k-deadline"><i class="ti ti-flag"></i> Prazo</span><span class="k-meeting"><i class="ti ti-users"></i> Reunião</span></div>
+      </header>
+      <div class="pf-mgr-days">
+        {% for d in agenda %}
+          <div class="pf-mgr-day {{ d.is_today ? 'is-today' : '' }} {{ d.is_weekend ? 'is-weekend' : '' }} {{ d.items ? '' : 'is-empty' }}">
+            <div class="pf-mgr-day-head"><span>{{ d.is_today ? 'hoje' : d.dow }}</span><strong>{{ d.day }}</strong></div>
+            <div class="pf-mgr-day-items">
+              {% for it in d.items %}
+                <a class="pf-mgr-ev k-{{ it.kind }}" href="{{ it.url }}" title="{{ it.title }} · {{ it.project }}">
+                  <i class="ti {{ {'delivery': 'ti-checkbox', 'milestone': 'ti-diamond', 'deadline': 'ti-flag', 'meeting': 'ti-users'}[it.kind] }}"></i>
+                  <span><strong>{% if it.time and it.kind == 'meeting' %}{{ it.time }} {% endif %}{{ it.title }}</strong><small>{{ it.project }}</small></span>
+                </a>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="card pf-mgr-card pf-mgr-team">
+      <header><div><h2><i class="ti ti-users-group"></i> Equipe</h2><p>Carga planejada nesta semana e na próxima, contra a capacidade de cada pessoa.</p></div>
+        <a class="btn btn-sm btn-ghost-secondary" href="{{ urls.workload }}">Ver carga completa <i class="ti ti-arrow-right"></i></a></header>
+      <div class="pf-mgr-team-list">
+      {% for p in team %}
+        <div class="pf-mgr-person">
+          <span class="pf-mgr-avatar">{{ p.initials }}</span>
+          <div class="pf-mgr-person-main">
+            <div class="pf-mgr-person-name"><strong>{{ p.name }}</strong><small>{{ p.tasks }} tarefa(s) nestes projetos</small></div>
+            {% for w in p.weeks %}
+              {% set lvl = w.pct is null ? (w.total > 0 ? 'critical' : 'none') : (w.pct > 100 ? 'critical' : (w.pct > 85 ? 'attention' : 'good')) %}
+              <div class="pf-mgr-load" title="{{ loop.first ? 'Esta semana' : 'Próxima semana' }}: {{ (w.total / 60)|round }}h de {{ (w.cap / 60)|round }}h">
+                <span class="pf-mgr-load-lbl">{{ loop.first ? 'Esta sem.' : 'Próxima' }}</span>
+                <span class="pf-mgr-load-bar"><span class="is-{{ lvl }}" style="width: {{ min(100, w.pct ?? (w.total > 0 ? 100 : 0)) }}%"></span></span>
+                <span class="pf-mgr-load-val is-{{ lvl }}">{% if lvl == 'critical' %}<i class="ti ti-alert-triangle"></i>{% endif %}{{ w.pct is null ? (w.total > 0 ? 'sem capacidade' : '—') : w.pct ~ '%' }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% else %}
+        <div class="pf-mgr-none"><i class="ti ti-user-off"></i> Nenhuma tarefa planejada para a equipe nestas duas semanas.</div>
+      {% endfor %}
+      </div>
+    </article>
+  </section>
+  {% endif %}
+
+  {# ------------------------------------------------------------------ assign modal #}
+  <div class="modal fade" id="pf-mgr-assign" tabindex="-1" aria-hidden="true" data-bs-focus="false">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title"><i class="ti ti-user-plus"></i> Atribuir responsável</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+      <div class="modal-body">
+        <p class="text-muted small mb-2" data-pf-assign-task></p>
+        <label class="form-label">Pessoa</label>
+        {{ user_dropdown|raw }}
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-ghost-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" class="btn btn-primary" data-pf-assign-save><i class="ti ti-check"></i> Atribuir</button></div>
+    </div></div>
+  </div>
+</div>

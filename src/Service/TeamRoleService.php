@@ -29,7 +29,7 @@ class TeamRoleService
                 `name` VARCHAR(120) NOT NULL DEFAULT '',
                 `color` VARCHAR(7) NOT NULL DEFAULT '#4263eb',
                 `comment` VARCHAR(500) NOT NULL DEFAULT '',
-                `date_mod` DATETIME NULL,
+                `date_mod` TIMESTAMP NULL DEFAULT NULL,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `uniq_project_name` (`projects_id`, `name`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC");

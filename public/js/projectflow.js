@@ -132,9 +132,9 @@
     $(
       "#pf-project-search,#pf-project-state-filter,#pf-project-health-filter,#pf-project-portfolio-filter",
     ).on("input change", filter);
-    $("[data-pf-quick]").on("click", function () {
+    $("button[data-pf-quick]").on("click", function () {
       quick = String($(this).data("pf-quick") || "all");
-      $("[data-pf-quick]").removeClass("is-selected");
+      $("button[data-pf-quick]").removeClass("is-selected");
       $(this).addClass("is-selected");
       filter();
     });
@@ -202,7 +202,7 @@
     $(
       "#pf-project-search,#pf-project-state-filter,#pf-project-health-filter,#pf-project-portfolio-filter",
     ).on("input change", () => setTimeout(pkCounts, 0));
-    $("[data-pf-quick],#pf-clear-project-filters").on("click", () =>
+    $("button[data-pf-quick],#pf-clear-project-filters").on("click", () =>
       setTimeout(pkCounts, 0),
     );
     // Kanban de projetos: arrastar um cartão para outra coluna muda o estado do projeto.
@@ -763,6 +763,7 @@
       history.replaceState(null, "", `#${n}`);
     });
     const initialTab =
+      String($app.data("open-tab") || "") ||
       location.hash.slice(1) ||
       localStorage.getItem(`projectflow.project.${projectId}.tab`) ||
       "overview";
@@ -942,6 +943,8 @@
       try {
         saved = window.localStorage.getItem(key) || "kanban";
       } catch (e) {}
+      // Native search submitted from Execução > Lista: reopen that tab in list mode.
+      if ($("#projectflow-workspace").data("open-tab") === "execution") saved = "list";
       apply(saved);
       $(document).on("click", "[data-pf-view]", function () {
         const view = $(this).data("pfView");
@@ -3301,7 +3304,35 @@
           localStorage.setItem(key, JSON.stringify(Array.from(collapsed)));
         } catch (e) {}
       };
+      // Native search (Execução > Lista): only the matching tasks, with their parents for context.
+      const searching = table.dataset.pfSearchActive === "1";
+      const hits = new Set(
+        String(table.dataset.pfSearchHits || "")
+          .split(",")
+          .filter(Boolean),
+      );
+      const keep = new Set();
+      if (searching) {
+        const parentOf = {};
+        rows.forEach((r) => (parentOf[r.dataset.pfTreeId] = r.dataset.pfTreeParent));
+        hits.forEach((id) => {
+          let cur = id,
+            guard = 0;
+          while (cur && cur !== "0" && guard++ < 50) {
+            keep.add(cur);
+            cur = parentOf[cur];
+          }
+        });
+        rows.forEach((r) => {
+          const id = r.dataset.pfTreeId;
+          r.classList.toggle("pf-search-out", !keep.has(id));
+          r.classList.toggle("pf-search-hit", hits.has(id));
+          r.classList.toggle("pf-search-context", keep.has(id) && !hits.has(id));
+        });
+        table.classList.add("is-native-search");
+      }
       const render = () => {
+        if (searching) return;
         const walk = (parentId, hidden) =>
           (children[parentId] || []).forEach((r) => {
             r.classList.toggle("pf-tree-hidden", hidden);
@@ -3753,4 +3784,410 @@
     });
     root.querySelector("[data-pf-ap-empty]")?.classList.toggle("d-none", shown > 0);
   });
+})();
+
+/* Arquivar / desarquivar (projeto, template, portfólio), busca de template e selects pesquisáveis. */
+(function () {
+  const $ = window.jQuery;
+  if (!$) return;
+  const esc = (v) =>
+    String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const host = () => $("[data-project-endpoint][data-csrf]").first();
+
+  // Confirmation dialog (Bootstrap) used before archiving / unarchiving.
+  const confirmBox = (opts) =>
+    new Promise((resolve) => {
+      const $m = $(`<div class="modal fade pf-confirm-modal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><h3 class="modal-title fs-5"><i class="ti ${opts.icon}"></i> ${esc(opts.title)}</h3><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+        <div class="modal-body"><p class="mb-2">${opts.html}</p></div>
+        <div class="modal-footer"><button type="button" class="btn btn-ghost-secondary" data-bs-dismiss="modal">Cancelar</button><button type="button" class="btn btn-primary" data-pf-confirm-ok><i class="ti ${opts.icon}"></i> ${esc(opts.ok)}</button></div>
+      </div></div></div>`).appendTo("body");
+      let done = false;
+      const modal = window.bootstrap.Modal.getOrCreateInstance($m[0]);
+      $m.on("click", "[data-pf-confirm-ok]", () => {
+        done = true;
+        modal.hide();
+      });
+      $m.on("hidden.bs.modal", () => {
+        $m.remove();
+        resolve(done);
+      });
+      modal.show();
+    });
+
+  $(document).on("click", "[data-pf-archive]", async function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const $b = $(this),
+      action = String($b.data("pf-archive")),
+      id = Number($b.data("project-id")),
+      name = String($b.data("name") || ""),
+      template = String($b.data("template")) === "1",
+      what = template ? "template" : "projeto";
+    const ok = await confirmBox(
+      action === "archive"
+        ? {
+            icon: "ti-archive",
+            title: `Arquivar ${what}`,
+            ok: `Sim, arquivar`,
+            html: `Você realmente deseja arquivar o ${what} <strong>${esc(name)}</strong>?<br><small class="text-muted">${template ? "Ele deixa de aparecer na escolha de template. Você pode desarquivar quando quiser." : "Ele sai do portfólio, do Kanban, de Minhas tarefas e da Carga de trabalho e fica só para leitura, na tela Arquivados. Você pode desarquivar quando quiser."}</small>`,
+          }
+        : {
+            icon: "ti-archive-off",
+            title: `Desarquivar ${what}`,
+            ok: "Desarquivar",
+            html: `Trazer <strong>${esc(name)}</strong> de volta para ${template ? "a escolha de template" : "o portfólio"}?`,
+          },
+    );
+    if (!ok) return;
+    const $h = host();
+    $b.prop("disabled", true);
+    $.ajax({
+      url: String($h.data("project-endpoint")),
+      method: "POST",
+      dataType: "json",
+      data: { action, id, _glpi_csrf_token: String($h.data("csrf")) },
+    })
+      .done((r) => {
+        if (!r?.ok) {
+          $b.prop("disabled", false);
+          return window.alert(r?.message || "Não foi possível concluir.");
+        }
+        try {
+          sessionStorage.setItem("pf-toast", r.message || "Feito.");
+        } catch {}
+        window.location.reload();
+      })
+      .fail((x) => {
+        $b.prop("disabled", false);
+        window.alert(x.responseJSON?.message || "Não foi possível concluir.");
+      });
+  });
+
+  // "Novo projeto" menu: filter the templates by name.
+  $(document).on("input", "[data-pf-tpl-filter]", function () {
+    const q = String(this.value || "").trim().toLowerCase();
+    const $list = $(this).closest(".dropdown-menu").find("[data-pf-tpl-list]");
+    let n = 0;
+    $list.find("[data-pf-tpl-name]").each(function () {
+      const hit = !q || String($(this).data("pf-tpl-name")).includes(q);
+      $(this).toggleClass("d-none", !hit);
+      if (hit) n++;
+    });
+    $list.find("[data-pf-tpl-none]").toggleClass("d-none", n > 0);
+  });
+  $(document).on("keydown", "[data-pf-tpl-filter]", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      $(this).closest(".dropdown-menu").find("[data-pf-tpl-name]:not(.d-none)").first().trigger("click");
+    }
+  });
+  $(document).on("shown.bs.dropdown", ".pf-dash-menu-new", function () {
+    $(this).find("[data-pf-tpl-filter]").val("").trigger("input").trigger("focus");
+  });
+  $(document).on("click", ".pf-dash-menu-new .dropdown-item", function () {
+    const t = this.closest(".dropdown")?.querySelector('[data-bs-toggle="dropdown"]');
+    if (t && window.bootstrap?.Dropdown) window.bootstrap.Dropdown.getOrCreateInstance(t).hide();
+  });
+
+  // Searchable selects (template of the "Criar projeto" form): GLPI's select2.
+  const searchable = () => {
+    if (!$.fn.select2) return;
+    $("select[data-pf-searchable]").each(function () {
+      if ($(this).data("select2")) return;
+      const $modal = $(this).closest(".modal");
+      $(this).select2({
+        width: "100%",
+        dropdownParent: $modal.length ? $modal : $(document.body),
+        language: { noResults: () => "Nenhum resultado" },
+        placeholder: String($(this).data("pf-searchable") || ""),
+      });
+    });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => setTimeout(searchable, 0));
+  else setTimeout(searchable, 0);
+})();
+
+/* Native GLPI search embedded in Project Flow screens (portfolio, Execução > Lista): GLPI's own
+   script only submits the form on its result pages, so the search button submits it here. */
+(function () {
+  const sel = ".pf-native-search, .pf-search-panel, .pf-task-search";
+  document.addEventListener(
+    "click",
+    (e) => {
+      const btn = e.target.closest && e.target.closest('.search-form-container button[name="search"]');
+      if (!btn || !btn.closest(sel)) return;
+      e.preventDefault();
+      const form = btn.closest("form");
+      if (!form) return;
+      // drop the paging position of the previous search
+      form.querySelectorAll('input[name="start"]').forEach((i) => (i.value = "0"));
+      form.submit();
+    },
+    true,
+  );
+})();
+
+
+/* Central do gestor: mapa da carteira, decisões, tabela de projetos, agenda e resumo com IA. */
+(function () {
+  const root = document.getElementById("pf-manager");
+  const $ = window.jQuery;
+  if (!root || !$) return;
+  const csrf = () => root.dataset.csrf;
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const toast = (text, error) => {
+    let $stack = $(".pf-toast-stack");
+    if (!$stack.length) $stack = $('<div class="pf-toast-stack" aria-live="polite"></div>').appendTo("body");
+    const $t = $(`<div class="pf-toast is-${error ? "error" : "success"}"><i class="ti ${error ? "ti-alert-triangle" : "ti-circle-check"}"></i><div></div></div>`);
+    $t.find("div").text(text);
+    $stack.append($t);
+    setTimeout(() => $t.fadeOut(200, () => $t.remove()), 4200);
+  };
+  const reloadWith = (msg) => {
+    try { sessionStorage.setItem("pf-toast", msg); } catch {}
+    window.location.reload();
+  };
+  const post = (url, data, $btn) => {
+    $btn?.prop("disabled", true).addClass("pf-loading");
+    return $.ajax({ url, method: "POST", dataType: "json", data: { ...data, _glpi_csrf_token: csrf() } })
+      .fail((x) => toast(x.responseJSON?.message || "Não foi possível concluir.", true))
+      .always(() => $btn?.prop("disabled", false).removeClass("pf-loading"));
+  };
+  const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+  // ---- hero: score ring + count-up
+  requestAnimationFrame(() => {
+    root.querySelectorAll("[data-pf-ring]").forEach((c) => { c.style.strokeDashoffset = c.dataset.pfRing; });
+    if (reduceMotion) return;
+    root.querySelectorAll("[data-pf-count]").forEach((el) => {
+      const target = parseInt(el.dataset.pfCount, 10) || 0;
+      if (target < 2) return;
+      const t0 = performance.now();
+      const step = (t) => {
+        const k = Math.min(1, (t - t0) / 700);
+        el.textContent = String(Math.round(target * (1 - Math.pow(1 - k, 3))));
+        if (k < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+  });
+
+  // ---- portfolio map (scatter: x = % of time elapsed, y = % complete)
+  const map = root.querySelector("[data-pf-mgr-map]");
+  const healthLabel = { good: "Saudável", attention: "Atenção", critical: "Crítico" };
+  const drawMap = () => {
+    if (!map) return;
+    let rows = [];
+    try { rows = JSON.parse(map.dataset.rows || "[]"); } catch {}
+    const plotted = rows.filter((r) => r.elapsed !== null && r.elapsed !== undefined);
+    const W = Math.max(280, map.clientWidth), H = Math.max(240, Math.min(380, Math.round(W * 0.62)));
+    const m = { l: 44, r: 16, t: 14, b: 38 };
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const X = (v) => m.l + (v / 100) * iw, Y = (v) => m.t + ih - (v / 100) * ih;
+    const ticks = [0, 25, 50, 75, 100];
+    let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa da carteira: andamento contra prazo decorrido">`;
+    // risk zone: more than 20 points behind the pace
+    svg += `<path class="pf-map-zone" d="M${X(20)},${Y(0)} L${X(100)},${Y(0)} L${X(100)},${Y(80)} Z"/>`;
+    ticks.forEach((t) => {
+      svg += `<line class="pf-map-grid" x1="${X(0)}" x2="${X(100)}" y1="${Y(t)}" y2="${Y(t)}"/>`;
+      svg += `<text class="pf-map-tick" x="${m.l - 8}" y="${Y(t) + 4}" text-anchor="end">${t}%</text>`;
+      svg += `<text class="pf-map-tick" x="${X(t)}" y="${H - m.b + 16}" text-anchor="middle">${t}%</text>`;
+    });
+    svg += `<line class="pf-map-pace" x1="${X(0)}" y1="${Y(0)}" x2="${X(100)}" y2="${Y(100)}"/>`;
+    svg += `<text class="pf-map-pace-lbl" x="${X(62)}" y="${Y(62) - 8}" transform="rotate(${-Math.atan2(ih, iw) * 180 / Math.PI} ${X(62)} ${Y(62) - 8})" text-anchor="middle">no ritmo</text>`;
+    svg += `<text class="pf-map-zone-lbl" x="${X(98)}" y="${Y(4)}" text-anchor="end">atrás do ritmo</text>`;
+    svg += `<text class="pf-map-axis" x="${X(50)}" y="${H - 4}" text-anchor="middle">Prazo decorrido →</text>`;
+    svg += `<text class="pf-map-axis" transform="translate(12 ${Y(50)}) rotate(-90)" text-anchor="middle">Concluído →</text>`;
+    // spread points that land on the same spot
+    const seen = {};
+    const pts = plotted.map((r) => {
+      const key = `${Math.round(r.elapsed / 3)}-${Math.round(r.progress / 3)}`;
+      const n = (seen[key] = (seen[key] || 0) + 1) - 1;
+      const ang = n * 2.4, rad = n ? 9 + n * 2 : 0;
+      return { r, x: X(r.elapsed) + Math.cos(ang) * rad, y: Y(r.progress) + Math.sin(ang) * rad };
+    });
+    const order = { good: 0, attention: 1, critical: 2 };
+    pts.sort((a, b) => order[a.r.health] - order[b.r.health]);
+    pts.forEach((p, i) => {
+      const h = p.r.health, s = 7;
+      let shape;
+      if (h === "critical") shape = `<path class="pf-map-dia" d="M${p.x},${p.y - s - 2} L${p.x + s + 2},${p.y} L${p.x},${p.y + s + 2} L${p.x - s - 2},${p.y} Z"/>`;
+      else if (h === "attention") shape = `<path d="M${p.x},${p.y - s - 1} L${p.x + s + 1},${p.y + s - 1} L${p.x - s - 1},${p.y + s - 1} Z"/>`;
+      else shape = `<circle cx="${p.x}" cy="${p.y}" r="${s}"/>`;
+      svg += `<a href="${esc(p.r.url)}" class="pf-map-pt is-${h}" data-i="${i}" tabindex="0" aria-label="${esc(p.r.name)}: ${p.r.progress}% concluído, ${p.r.elapsed}% do prazo">
+        <circle class="pf-map-hit" cx="${p.x}" cy="${p.y}" r="16"/>${shape}</a>`;
+      if (h === "critical" || (p.r.delta ?? 0) > 14) {
+        const name = p.r.name.length > 22 ? p.r.name.slice(0, 21) + "…" : p.r.name;
+        const right = p.x < m.l + iw * 0.7;
+        svg += `<text class="pf-map-lbl" x="${p.x + (right ? 12 : -12)}" y="${p.y + 4}" text-anchor="${right ? "start" : "end"}">${esc(name)}</text>`;
+      }
+    });
+    svg += "</svg>";
+    map.innerHTML = svg + '<div class="pf-map-tip" hidden></div>';
+    const tip = map.querySelector(".pf-map-tip");
+    map.querySelectorAll(".pf-map-pt").forEach((a) => {
+      const p = pts[+a.dataset.i];
+      const show = () => {
+        const r = p.r;
+        const fc = r.delta === null || r.delta === undefined ? (r.plan_end ? `Prazo ${r.plan_end.split("-").reverse().join("/")}` : "Sem prazo")
+          : r.delta > 0 ? `Previsão: <b>+${r.delta} dias</b> de atraso` : `Previsão: ${r.delta === 0 ? "no prazo" : -r.delta + " dias de folga"}`;
+        tip.innerHTML = `<strong>${esc(r.name)}</strong><span class="pf-map-tip-h is-${r.health}">${esc(healthLabel[r.health] || r.health)}</span>
+          <span>${r.progress}% concluído · ${r.elapsed}% do prazo</span><span>${fc}</span>${r.overdue ? `<span>${r.overdue} tarefa(s) atrasada(s)</span>` : ""}`;
+        tip.hidden = false;
+        const tw = tip.offsetWidth, th = tip.offsetHeight;
+        tip.style.left = Math.max(4, Math.min(W - tw - 4, p.x - tw / 2)) + "px";
+        tip.style.top = (p.y - th - 14 < 0 ? p.y + 16 : p.y - th - 14) + "px";
+        a.classList.add("is-hover");
+      };
+      const hide = () => { tip.hidden = true; a.classList.remove("is-hover"); };
+      a.addEventListener("mouseenter", show); a.addEventListener("focus", show);
+      a.addEventListener("mouseleave", hide); a.addEventListener("blur", hide);
+    });
+    const foot = root.querySelector("[data-pf-mgr-map-foot]");
+    const missing = rows.length - plotted.length;
+    if (foot) foot.textContent = missing ? `${missing} projeto(s) sem data de início ou fim não aparecem no mapa.` : "";
+  };
+  drawMap();
+  let rt;
+  window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(drawMap, 150); });
+
+  // ---- inbox tabs
+  const openTab = (k) => {
+    root.querySelectorAll("[data-pf-mgr-tabbtn]").forEach((b) => {
+      const on = b.dataset.pfMgrTabbtn === k;
+      b.classList.toggle("is-active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    root.querySelectorAll("[data-pf-mgr-pane]").forEach((p) => p.classList.toggle("d-none", p.dataset.pfMgrPane !== k));
+  };
+  $(root).on("click", "[data-pf-mgr-tabbtn]", function () { openTab(this.dataset.pfMgrTabbtn); });
+  $(root).on("click", "[data-pf-mgr-tab]", function () { openTab(this.dataset.pfMgrTab); });
+
+  // ---- projects table: chips, search, sort
+  const table = root.querySelector("[data-pf-mgr-table]");
+  let chip = "all";
+  const applyFilter = () => {
+    if (!table) return;
+    const q = (root.querySelector("[data-pf-mgr-search]")?.value || "").trim().toLowerCase();
+    let shown = 0;
+    table.querySelectorAll("tbody tr").forEach((tr) => {
+      const ok = (chip === "all" || (" " + tr.dataset.flags + " ").includes(" " + chip + " ")) && (!q || tr.dataset.name.includes(q));
+      tr.classList.toggle("d-none", !ok);
+      if (ok) shown++;
+    });
+    root.querySelector("[data-pf-mgr-table-empty]")?.classList.toggle("d-none", shown > 0);
+  };
+  const setChip = (k) => {
+    chip = k;
+    root.querySelectorAll("[data-pf-mgr-chip]").forEach((b) => b.classList.toggle("is-active", b.dataset.pfMgrChip === k));
+    applyFilter();
+  };
+  $(root).on("click", "[data-pf-mgr-chip]", function () { setChip(this.dataset.pfMgrChip); });
+  $(root).on("click", "[data-pf-mgr-filter]", function () { setChip(this.dataset.pfMgrFilter); });
+  $(root).on("input", "[data-pf-mgr-search]", applyFilter);
+  if (table) {
+    const numeric = new Set(["health", "progress", "delta", "hours", "overdue", "idle"]);
+    table.querySelectorAll("th[data-sort]").forEach((th) => {
+      th.tabIndex = 0;
+      th.setAttribute("role", "button");
+      const sort = () => {
+        const key = th.dataset.sort;
+        const dir = th.dataset.dir === "asc" ? "desc" : "asc";
+        table.querySelectorAll("th[data-sort]").forEach((o) => { delete o.dataset.dir; });
+        th.dataset.dir = dir;
+        const body = table.tBodies[0];
+        const rows = [...body.rows];
+        rows.sort((a, b) => {
+          const va = a.dataset[key], vb = b.dataset[key];
+          const c = numeric.has(key) ? parseFloat(va) - parseFloat(vb) : String(va).localeCompare(String(vb), "pt-BR");
+          return dir === "asc" ? c : -c;
+        });
+        rows.forEach((r) => body.appendChild(r));
+      };
+      th.addEventListener("click", sort);
+      th.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); sort(); } });
+    });
+  }
+
+  // ---- inline project state
+  $(root).on("change", "[data-pf-project-state]", function () {
+    const $sel = $(this);
+    const prev = $sel.data("prev") ?? this.defaultValue;
+    post(root.dataset.projectEndpoint, { action: "update", id: this.dataset.pfProjectState, projectstates_id: this.value }, $sel)
+      .done((r) => {
+        if (r?.ok) { toast("Estado do projeto atualizado."); $sel.data("prev", this.value); }
+        else { toast(r?.message || "Não foi possível mudar o estado.", true); $sel.val(prev); }
+      })
+      .fail(() => $sel.val(prev));
+  });
+
+  // ---- overdue: postpone / conclude
+  const pad = (n) => String(n).padStart(2, "0");
+  const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  $(root).on("click", "[data-pf-postpone]", function () {
+    const item = this.closest("[data-pf-task]");
+    let date = "";
+    if (this.dataset.pfPostpone === "date") date = $(item).find("[data-pf-postpone-date]").val();
+    else { const d = new Date(); d.setDate(d.getDate() + parseInt(this.dataset.pfPostpone, 10)); date = ymd(d); }
+    if (!date) { toast("Escolha a nova data.", true); return; }
+    post(root.dataset.taskEndpoint, { action: "update", id: item.dataset.pfTask, plan_end_date: date + " 18:00:00" }, $(this))
+      .done((r) => (r?.ok ? reloadWith("Entrega adiada para " + date.split("-").reverse().join("/") + ".") : toast(r?.message || "Não foi possível adiar.", true)));
+  });
+  $(root).on("click", "[data-pf-task-done]", function () {
+    const item = this.closest("[data-pf-task]");
+    post(root.dataset.taskEndpoint, { action: "move", id: item.dataset.pfTask, projectstates_id: root.dataset.finishedState }, $(this))
+      .done((r) => (r?.ok ? reloadWith("Tarefa concluída.") : toast(r?.message || "Não foi possível concluir a tarefa.", true)));
+  });
+
+  // ---- unassigned: assign through the native user dropdown in a modal
+  const modalEl = document.getElementById("pf-mgr-assign");
+  let assignTask = 0;
+  $(root).on("click", "[data-pf-assign]", function () {
+    assignTask = this.closest("[data-pf-task]")?.dataset.pfTask || 0;
+    $(modalEl).find("[data-pf-assign-task]").text("Tarefa: " + (this.dataset.taskName || ""));
+    window.bootstrap?.Modal.getOrCreateInstance(modalEl).show();
+  });
+  $(modalEl).on("click", "[data-pf-assign-save]", function () {
+    const uid = $(modalEl).find('select[name="pf_assign_user"]').val();
+    if (!uid || uid === "0") { toast("Escolha a pessoa.", true); return; }
+    post(root.dataset.taskEndpoint, { action: "team_add", task_id: assignTask, itemtype: "User", items_id: uid }, $(this))
+      .done((r) => (r?.ok ? reloadWith("Responsável atribuído.") : toast(r?.message || "Não foi possível atribuir.", true)));
+  });
+
+  // ---- AI executive summary
+  const panel = root.querySelector("[data-pf-mgr-ai-panel]");
+  const sev = { alta: "critical", media: "attention", baixa: "good" };
+  const renderAi = (s) => {
+    const body = panel.querySelector("[data-pf-mgr-ai-body]");
+    const list = (arr, fn) => (arr && arr.length ? arr.map(fn).join("") : "");
+    body.innerHTML = `
+      <h3>${esc(s.titulo)}</h3><p class="pf-mgr-ai-lead">${esc(s.resumo)}</p>
+      <div class="pf-mgr-ai-cols">
+        ${s.prioridades?.length ? `<div><h4><i class="ti ti-target-arrow"></i> Prioridades</h4><ol>${list(s.prioridades, (p) => `<li><strong>${esc(p.acao)}</strong>${p.projeto ? ` <span class="pf-mgr-ai-proj">${esc(p.projeto)}</span>` : ""}${p.motivo ? `<small>${esc(p.motivo)}</small>` : ""}</li>`)}</ol></div>` : ""}
+        ${s.riscos?.length ? `<div><h4><i class="ti ti-alert-triangle"></i> Riscos</h4><ul class="pf-mgr-ai-risks">${list(s.riscos, (r) => `<li><span class="pf-mgr-health is-${sev[r.severidade] || "attention"}"><span>${esc(r.severidade)}</span></span><strong>${esc(r.titulo)}</strong>${r.projeto ? ` <span class="pf-mgr-ai-proj">${esc(r.projeto)}</span>` : ""}<small>${esc(r.acao)}</small></li>`)}</ul></div>` : ""}
+        ${s.boas_noticias?.length ? `<div><h4><i class="ti ti-confetti"></i> Boas notícias</h4><ul>${list(s.boas_noticias, (b) => `<li>${esc(b)}</li>`)}</ul></div>` : ""}
+      </div>`;
+    const meta = s.meta || {};
+    panel.querySelector("[data-pf-mgr-ai-meta]").textContent = `Gemini ${meta.model || ""}${meta.cached ? " · do cache" : ""}${meta.ms ? " · " + (meta.ms / 1000).toFixed(1) + "s" : ""}`;
+  };
+  const askAi = (force, $btn) => {
+    panel.classList.remove("d-none");
+    panel.classList.add("is-loading");
+    panel.querySelector("[data-pf-mgr-ai-body]").innerHTML = '<div class="pf-mgr-ai-wait"><span></span><span></span><span></span> Lendo a carteira inteira e escrevendo o briefing...</div>';
+    panel.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "nearest" });
+    post(root.dataset.managerEndpoint, { action: "ai_summary", manager: root.dataset.manager, force: force ? 1 : 0 }, $btn)
+      .done((r) => {
+        if (r?.ok) renderAi(r.summary);
+        else { panel.querySelector("[data-pf-mgr-ai-body]").innerHTML = `<div class="pf-mgr-none is-error"><i class="ti ti-alert-triangle"></i> ${esc(r?.message || "Falha ao gerar.")}</div>`; }
+      })
+      .fail((x) => { panel.querySelector("[data-pf-mgr-ai-body]").innerHTML = `<div class="pf-mgr-none is-error"><i class="ti ti-alert-triangle"></i> ${esc(x.responseJSON?.message || "Falha ao gerar o resumo.")}</div>`; })
+      .always(() => panel.classList.remove("is-loading"));
+  };
+  $(root).on("click", "[data-pf-mgr-ai]", function () {
+    if (this.dataset.disabled) { toast("Configure a chave do Gemini em Configurações do Project Flow para usar o resumo com IA.", true); return; }
+    askAi(false, $(this));
+  });
+  $(root).on("click", "[data-pf-mgr-ai-force]", function () { askAi(true, $(this)); });
+  $(root).on("click", "[data-pf-mgr-ai-close]", () => panel.classList.add("d-none"));
 })();

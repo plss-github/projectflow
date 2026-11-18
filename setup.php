@@ -10,7 +10,7 @@ if (!defined('GLPI_ROOT')) {
     die('Direct access not allowed');
 }
 
-define('PLUGIN_PROJECTFLOW_VERSION', '3.5.3');
+define('PLUGIN_PROJECTFLOW_VERSION', '3.5.5');
 define('PLUGIN_PROJECTFLOW_GLPI_MIN', '11.0.0');
 define('PLUGIN_PROJECTFLOW_GLPI_MAX', '11.0.99');
 
@@ -24,9 +24,12 @@ define('PLUGIN_PROJECTFLOW_WEBDIR', ($GLOBALS['CFG_GLPI']['root_doc'] ?? '') . '
 
 function plugin_init_projectflow(): void
 {
-    global $PLUGIN_HOOKS;
+    global $PLUGIN_HOOKS, $CFG_GLPI;
 
     Plugin::registerClass(Automation::class);
+    // Plugin tables used by the Project Flow fields of the native project search.
+    $CFG_GLPI['glpiitemtypetables']['glpi_plugin_projectflow_projectmeta'] = \GlpiPlugin\Projectflow\ProjectMetaItem::class;
+    $CFG_GLPI['glpiitemtypetables']['glpi_plugin_projectflow_archives'] = \GlpiPlugin\Projectflow\ArchiveItem::class;
 
     if (!Plugin::isPluginActive('projectflow')) {
         return;
@@ -99,7 +102,7 @@ function plugin_init_projectflow(): void
     }
     $PLUGIN_HOOKS[Hooks::REDEFINE_MENUS]['projectflow'] = 'plugin_projectflow_redefine_menus';
     // Menu entries/links are cached in the session: rebuild them once per plugin version.
-    $menuStamp = PLUGIN_PROJECTFLOW_VERSION . '-menu3';
+    $menuStamp = PLUGIN_PROJECTFLOW_VERSION . '-menu5';
     if (($_SESSION['projectflow_menu_stamp'] ?? '') !== $menuStamp) {
         unset($_SESSION['glpimenu']);
         $_SESSION['projectflow_menu_stamp'] = $menuStamp;
@@ -238,11 +241,18 @@ function plugin_projectflow_menu_links(array $links = []): array
         $label = '<i class="ti ti-eye-check" title="Minhas tarefas"></i><span class="d-none d-xxl-block">Minhas tarefas</span>';
         $out[$label] = $base . '/tasks.php?scope=mine';
     }
+    if (Project::canView()) {
+        $out['<i class="ti ti-layout-dashboard" title="Central do gestor"></i><span class="d-none d-xxl-block">Central do gestor</span>'] = $base . '/manager.php';
+    }
     if (!array_filter(array_keys($out), static fn($k) => str_contains((string) $k, 'ti-chart-bar'))) {
         $label = '<i class="ti ti-chart-bar" title="Carga de trabalho"></i><span class="d-none d-xxl-block">Carga de trabalho</span>';
         $out[$label] = $base . '/workload.php';
     }
     $out['summary_kanban'] = $base . '/index.php?view=kanban';
+    if (Project::canView()) {
+        // After "Kanban global" (array order = header order).
+        $out['<i class="ti ti-archive" title="Projetos arquivados"></i><span class="d-none d-xxl-block">Arquivados</span>'] = $base . '/archived.php';
+    }
     if (isset($links['lists'])) $out['lists'] = $links['lists'];
     return $out;
 }
