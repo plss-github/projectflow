@@ -41,7 +41,7 @@ class ProgressRuleService
             `notify_groups_id` INT UNSIGNED NOT NULL DEFAULT 0,
             `is_active` TINYINT(1) NOT NULL DEFAULT 1,
             `ranking` INT UNSIGNED NOT NULL DEFAULT 0,
-            `date_mod` DATETIME NULL,
+            `date_mod` TIMESTAMP NULL DEFAULT NULL,
             PRIMARY KEY (`id`),
             KEY `idx_active_range` (`is_active`, `min_percent`, `max_percent`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC");

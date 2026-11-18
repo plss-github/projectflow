@@ -83,8 +83,9 @@ class ProjectService
      *
      * @param int[]|null $onlyIds restrict to these project IDs; null = every visible project
      */
-    public function getAccessibleProjectIndex(?array $onlyIds = null): array
+    public function getAccessibleProjectIndex(?array $onlyIds = null, bool $includeArchived = false): array
     {
+        $archived = $includeArchived ? [] : ArchiveService::archivedIds();
         global $DB;
         if (!Project::canView()) return [];
         if ($onlyIds !== null) {
@@ -110,6 +111,7 @@ class ProjectService
             $project->getFromResultSet($row);
             if (!$project->canViewItem()) continue;
             $id = (int) $row['id'];
+            if (isset($archived[$id])) continue;
             $index[$id] = [
                 'id' => $id,
                 'name' => (string) ($row['name'] ?? ''),
@@ -653,6 +655,62 @@ class ProjectService
         return $stats;
     }
 
+    /**
+     * Finished / paused / overdue flags and effective health of a project (manual health or the
+     * automatic rule). Shared by the full card data and the lightweight portfolio index.
+     * @param array{is_finished?:bool,is_paused?:bool} $state
+     * @return array{finished:bool,paused:bool,overdue:bool,health:string}
+     */
+    public static function healthOf(array $state, int $percent, ?string $end, array $meta, array $taskStats): array
+    {
+        $isFinished = !empty($state['is_finished']) || $percent >= 100;
+        $isPaused = !$isFinished && !empty($state['is_paused']);
+        // A paused project does not raise delay alerts while it is on hold.
+        $isOverdue = !$isFinished && !$isPaused && $end && strtotime($end) < time();
+        $health = (string) ($meta['health'] ?? 'auto');
+        if (!in_array($health, ['good', 'attention', 'critical'], true)) {
+            $days = Config::int('health_due_soon_days', 7);
+            if ($isFinished || $isPaused) $health = 'good';
+            elseif ($isOverdue || (($taskStats['overdue'] ?? 0) >= 3)) $health = 'critical';
+            elseif (($taskStats['overdue'] ?? 0) > 0 || ($taskStats['attention'] ?? 0) > 0) $health = 'attention';
+            elseif ($end && strtotime($end) <= strtotime('+' . max(1, $days) . ' days') && $percent < 80) $health = 'attention';
+            else $health = 'good';
+        }
+        return ['finished' => $isFinished, 'paused' => $isPaused, 'overdue' => (bool) $isOverdue, 'health' => $health];
+    }
+
+    /**
+     * Full card data for the given visible project ids, in the given order.
+     * @param int[] $ids
+     */
+    public function getProjectsByIds(array $ids): array
+    {
+        global $DB;
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        if (!$ids) return [];
+        $rows = [];
+        $canUpdate = [];
+        foreach ($DB->request(['FROM' => Project::getTable(), 'WHERE' => ['id' => $ids]]) as $row) {
+            $project = new Project();
+            $project->getFromResultSet($row);
+            if (!$project->canViewItem()) continue;
+            $rows[(int) $row['id']] = $row;
+            $canUpdate[(int) $row['id']] = $project->canUpdateItem();
+        }
+        $found = array_keys($rows);
+        $states = $this->references->getStateMap();
+        $metas = $this->meta->getForProjects($found);
+        $favorites = $this->meta->getFavoriteIds();
+        $taskStats = $this->getTaskStatsForProjects($found);
+        $out = [];
+        foreach ($ids as $id) {
+            if (!isset($rows[$id])) continue;
+            $out[] = $this->normalizeProject($rows[$id], $states, $metas[$id] ?? [], isset($favorites[$id]), $taskStats[$id] ?? [])
+                + ['can_update' => $canUpdate[$id] ?? false];
+        }
+        return $out;
+    }
+
     private function normalizeProject(array $row, array $states, array $meta, bool $favorite, array $taskStats): array
     {
         $stateId = (int) ($row['projectstates_id'] ?? 0);
@@ -660,20 +718,8 @@ class ProjectService
         $state = $states[$effectiveStateId] ?? ['id'=>$effectiveStateId,'name'=>'Estado inicial','color'=>'#64748b','is_finished'=>false];
         $managerId = (int) ($row['users_id'] ?? 0); $groupId = (int) ($row['groups_id'] ?? 0); $entityId = (int) ($row['entities_id'] ?? 0);
         $start = $row['plan_start_date'] ?? null; $end = $row['plan_end_date'] ?? null; $percent = max(0, min(100, (int) ($row['percent_done'] ?? 0)));
-        $isFinished = (bool) $state['is_finished'] || $percent >= 100;
-        $isPaused = !$isFinished && !empty($state['is_paused']);
-        // A paused project does not raise delay alerts while it is on hold.
-        $isOverdue = !$isFinished && !$isPaused && $end && strtotime($end) < time();
+        ['finished' => $isFinished, 'paused' => $isPaused, 'overdue' => $isOverdue, 'health' => $health] = self::healthOf($state, $percent, $end, $meta, $taskStats);
         $healthConfigured = (string) ($meta['health'] ?? 'auto');
-        $health = $healthConfigured;
-        if ($health === 'auto') {
-            $days = \GlpiPlugin\Projectflow\Config::int('health_due_soon_days', 7);
-            if ($isFinished || $isPaused) $health = 'good';
-            elseif ($isOverdue || (($taskStats['overdue'] ?? 0) >= 3)) $health = 'critical';
-            elseif (!$isFinished && (($taskStats['overdue'] ?? 0) > 0 || ($taskStats['attention'] ?? 0) > 0)) $health = 'attention';
-            elseif (!$isFinished && $end && strtotime($end) <= strtotime('+' . max(1,$days) . ' days') && $percent < 80) $health = 'attention';
-            else $health = 'good';
-        }
         return [
             'id'=>(int)$row['id'],'name'=>(string)($row['name']??''),'code'=>(string)($row['code']??''),'content'=>trim(strip_tags((string)($row['content']??''))),'comment'=>trim(strip_tags((string)($row['comment']??''))),
             'priority'=>(int)($row['priority']??3),'priority_name'=>CommonITILObject::getPriorityName((int)($row['priority']??3)),'percent_done'=>$percent,'auto_percent_done'=>(bool)($row['auto_percent_done']??false),

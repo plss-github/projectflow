@@ -37,6 +37,9 @@ try {
         projectflow_task_json_response(false, ['message' => 'Token de segurança inválido ou expirado. Recarregue a página e tente novamente.'], 403);
     }
     $service = new TaskService();
+    if (\GlpiPlugin\Projectflow\Service\ArchiveService::blocksWrite('task', $action, $input)) {
+        projectflow_task_json_response(false, ['message' => 'Projeto arquivado: está só para leitura. Desarquive para editar.'], 403);
+    }
 
     switch ($action) {
         case 'get':

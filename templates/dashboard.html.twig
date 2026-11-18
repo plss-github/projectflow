@@ -1,21 +1,27 @@
 <div class="pf-app {{ compact_cards ? 'pf-compact' : '' }}" id="projectflow-dashboard"
      data-project-endpoint="{{ ajax_project_url }}" data-csrf="{{ csrf_token }}" data-default-view="{{ default_view }}">
   <nav class="pf-dash-menu" aria-label="Ações do portfólio">
+    <a class="pf-dash-menu-link pf-dash-menu-manager" href="{{ manager_url }}" title="Todos os projetos sob sua responsabilidade num lugar só"><i class="ti ti-layout-dashboard"></i> Central do gestor</a>
     <a class="pf-dash-menu-link" href="{{ tasks_url }}"><i class="ti ti-list-check"></i> Minhas tarefas</a>
     <a class="pf-dash-menu-link" href="{{ workload_url }}" title="Horas planejadas x capacidade de cada pessoa, por semana"><i class="ti ti-chart-bar"></i> Carga de trabalho</a>
     <a class="pf-dash-menu-link" href="{{ native_list_url }}" title="Lista de projetos nativa do GLPI (busca avançada, ações em massa)"><i class="ti ti-list-search"></i> Lista nativa</a>
-    {% if can_create_project %}
+    {% if archived_mode %}<a class="pf-dash-menu-link" href="{{ portfolio_url }}"><i class="ti ti-arrow-back-up"></i> Voltar ao portfólio</a>{% else %}<a class="pf-dash-menu-link" href="{{ archived_url }}" title="Projetos arquivados"><i class="ti ti-archive"></i> Arquivados</a>{% endif %}
+    {% if can_create_project and not archived_mode %}
       <div class="dropdown pf-dash-menu-new">
-        <button class="btn btn-primary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="ti ti-plus"></i> Novo projeto</button>
+        <button class="btn btn-primary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"><i class="ti ti-plus"></i> Novo projeto</button>
         <div class="dropdown-menu dropdown-menu-end pf-dash-menu-dropdown">
           <button class="dropdown-item" type="button" data-pf-new-project="0" data-bs-toggle="modal" data-bs-target="#pf-project-create-modal"><i class="ti ti-file-plus"></i> Projeto em branco</button>
           <div class="dropdown-divider"></div>
           <h6 class="dropdown-header">A partir de template</h6>
+          {% if templates|length > 5 %}<div class="pf-tpl-search"><i class="ti ti-search"></i><input type="search" class="form-control form-control-sm" placeholder="Pesquisar template..." data-pf-tpl-filter autocomplete="off"></div>{% endif %}
+          <div class="pf-tpl-menu-list" data-pf-tpl-list>
           {% for template in templates %}
-            <button class="dropdown-item" type="button" data-pf-new-project="{{ template.id }}"><i class="ti ti-template"></i> {{ template.name }}</button>
+            <button class="dropdown-item" type="button" data-pf-new-project="{{ template.id }}" data-pf-tpl-name="{{ template.name|lower }}"><i class="ti ti-template"></i> {{ template.name }}</button>
           {% else %}
             <span class="dropdown-item-text text-muted small">Nenhum template cadastrado.</span>
           {% endfor %}
+          <span class="dropdown-item-text text-muted small d-none" data-pf-tpl-none>Nenhum template com esse nome.</span>
+          </div>
           <div class="dropdown-divider"></div>
           <a class="dropdown-item" href="{{ templates_url }}?new=1"><i class="ti ti-square-plus"></i> Criar template</a>
           <a class="dropdown-item" href="{{ templates_url }}"><i class="ti ti-settings"></i> Gerenciar templates</a>
@@ -24,36 +30,64 @@
     {% endif %}
   </nav>
 
-  <section class="pf-kpi-grid">
-    <button class="pf-kpi" type="button" data-pf-quick="all"><span class="pf-kpi-icon"><i class="ti ti-folders"></i></span><span><small>Visíveis</small><strong>{{ stats.total }}</strong></span></button>
-    <button class="pf-kpi" type="button" data-pf-quick="active"><span class="pf-kpi-icon"><i class="ti ti-progress"></i></span><span><small>Ativos</small><strong>{{ stats.active }}</strong></span></button>
-    <button class="pf-kpi pf-kpi-danger" type="button" data-pf-quick="overdue"><span class="pf-kpi-icon"><i class="ti ti-calendar-exclamation"></i></span><span><small>Em atraso</small><strong>{{ stats.overdue }}</strong></span></button>
-    <button class="pf-kpi pf-kpi-warning" type="button" data-pf-quick="attention"><span class="pf-kpi-icon"><i class="ti ti-heart-rate-monitor"></i></span><span><small>Em atenção</small><strong>{{ stats.attention }}</strong></span></button>
-    <button class="pf-kpi" type="button" data-pf-quick="favorites"><span class="pf-kpi-icon"><i class="ti ti-star"></i></span><span><small>Favoritos</small><strong>{{ stats.favorites }}</strong></span></button>
-    <a class="pf-kpi" href="{{ tasks_url }}"><span class="pf-kpi-icon"><i class="ti ti-list-check"></i></span><span><small>Minhas tarefas</small><strong>{{ stats.my_tasks }}</strong></span></a>
+  {% if archived_mode %}
+  <section class="pf-archived-head">
+    <div><div class="pf-eyebrow">PORTFÓLIO</div><h1><i class="ti ti-archive"></i> Projetos arquivados</h1><p>Projetos arquivados ficam fora do portfólio, do Kanban, de Minhas tarefas e da Carga de trabalho, e abrem só para leitura. Use <strong>Desarquivar</strong> para trazer um de volta.</p></div>
+  </section>
+  {% endif %}
+  <section class="pf-kpi-grid {{ archived_mode ? 'is-archived' : '' }}">
+    <a class="pf-kpi {{ page.quick == 'all' ? 'is-selected' : '' }}" href="{{ page.quick_urls.all }}" data-pf-quick="all"><span class="pf-kpi-icon"><i class="ti ti-{{ archived_mode ? 'archive' : 'folders' }}"></i></span><span><small>{{ archived_mode ? 'Arquivados' : 'Visíveis' }}</small><strong>{{ stats.total }}</strong></span></a>
+    <a class="pf-kpi {{ page.quick == 'active' ? 'is-selected' : '' }}" href="{{ page.quick_urls.active }}" data-pf-quick="active"><span class="pf-kpi-icon"><i class="ti ti-progress"></i></span><span><small>Ativos</small><strong>{{ stats.active }}</strong></span></a>
+    <a class="pf-kpi pf-kpi-danger {{ page.quick == 'overdue' ? 'is-selected' : '' }}" href="{{ page.quick_urls.overdue }}" data-pf-quick="overdue"><span class="pf-kpi-icon"><i class="ti ti-calendar-exclamation"></i></span><span><small>Em atraso</small><strong>{{ stats.overdue }}</strong></span></a>
+    <a class="pf-kpi pf-kpi-warning {{ page.quick == 'attention' ? 'is-selected' : '' }}" href="{{ page.quick_urls.attention }}" data-pf-quick="attention"><span class="pf-kpi-icon"><i class="ti ti-heart-rate-monitor"></i></span><span><small>Em atenção</small><strong>{{ stats.attention }}</strong></span></a>
+    <a class="pf-kpi {{ page.quick == 'favorites' ? 'is-selected' : '' }}" href="{{ page.quick_urls.favorites }}" data-pf-quick="favorites"><span class="pf-kpi-icon"><i class="ti ti-star"></i></span><span><small>Favoritos</small><strong>{{ stats.favorites }}</strong></span></a>
+    {% if not archived_mode %}<a class="pf-kpi" href="{{ tasks_url }}" data-pf-quick="tasks"><span class="pf-kpi-icon"><i class="ti ti-list-check"></i></span><span><small>Minhas tarefas</small><strong>{{ stats.my_tasks }}</strong></span></a>{% endif %}
   </section>
 
-  <section class="pf-filterbar pf-panel">
-    <div class="pf-search"><i class="ti ti-search"></i><input id="pf-project-search" class="form-control" type="search" placeholder="Buscar projeto, código, responsável, entidade, portfólio..."></div>
-    <select id="pf-project-state-filter" class="form-select pf-filter-select"><option value="">Todos os estados</option>{% for state in states %}<option value="{{ state.id }}">{{ state.name }}</option>{% endfor %}</select>
-    <select id="pf-project-health-filter" class="form-select pf-filter-select"><option value="">Toda saúde</option><option value="good">Saudável</option><option value="attention">Atenção</option><option value="critical">Crítico</option></select>
-    <select id="pf-project-portfolio-filter" class="form-select pf-filter-select"><option value="">Todos os portfólios</option>{% for portfolio in portfolios %}<option value="{{ portfolio|lower }}">{{ portfolio }}</option>{% endfor %}</select>
-    <button class="btn btn-outline-secondary pf-icon-btn" id="pf-clear-project-filters" title="Limpar filtros"><i class="ti ti-filter-off"></i></button>
-    <div class="pf-view-switch" role="group" aria-label="Visualização"><button type="button" data-view="cards" title="Cards"><i class="ti ti-layout-grid"></i></button><button type="button" data-view="table" title="Tabela"><i class="ti ti-table"></i></button><button type="button" data-view="kanban" title="Kanban por estado (arraste para mudar o estado)"><i class="ti ti-layout-columns"></i></button></div>
+  <section class="card pf-search-toolbar">
+    <div class="card-header search-header px-2 px-xl-3">
+      <div class="search-controls d-flex justify-content-between align-items-center w-100 gap-2 flex-wrap">
+        <div class="primary-controls d-flex align-items-center flex-wrap gap-1">
+          <div class="btn-group">
+            <button class="btn btn-sm py-1 {{ page.criteria_count ? 'btn-active-search' : 'btn-ghost-secondary' }} dropdown-toggle pf-search-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+              <i class="ti ti-list-search"></i><span>Pesquisar</span>{% if page.criteria_count %}<span class="badge bg-secondary-lt ms-1">{{ page.criteria_count }}</span>{% endif %}
+            </button>
+            <div class="dropdown-menu dropdown-menu-card pf-search-panel" style="width: max-content; max-width: 100vw;">
+              {{ page.search_html|raw }}
+            </div>
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-sm py-1 {{ page.sort.is_default ? 'btn-ghost-secondary' : 'btn-active-sort' }} dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="ti ti-arrows-sort"></i><span>Ordenado por {{ page.sort.label }}</span>
+            </button>
+            <div class="dropdown-menu pf-sort-menu">
+              {% for opt in page.sort.options %}<a class="dropdown-item {{ opt.active ? 'active' : '' }}" href="{{ opt.url }}"><i class="ti ti-{{ opt.active ? 'check' : 'point' }}"></i>{{ opt.label }}</a>{% endfor %}
+              <div class="dropdown-divider"></div>
+              <a class="dropdown-item" href="{{ page.sort.toggle_url }}"><i class="ti ti-sort-{{ page.sort.order == 'ASC' ? 'descending' : 'ascending' }}"></i>{{ page.sort.order == 'ASC' ? 'Inverter: decrescente' : 'Inverter: crescente' }}</a>
+            </div>
+          </div>
+          {% if page.quick != 'all' %}<a href="{{ page.quick_urls.all }}" class="btn btn-sm py-1 btn-active-search pf-quick-clear" title="Mostrar todos os encontrados pela pesquisa"><i class="ti ti-filter"></i>{{ {'active':'Ativos','overdue':'Em atraso','attention':'Em atenção','favorites':'Favoritos'}[page.quick] }}<i class="ti ti-x ms-1"></i></a>{% endif %}
+          {% if page.criteria_count or page.quick != 'all' %}<a class="btn btn-sm btn-icon btn-ghost-secondary" href="{{ archived_mode ? archived_url : portfolio_url }}?reset=1" title="Limpar pesquisa" data-bs-toggle="tooltip"><i class="ti ti-filter-off"></i></a>{% endif %}
+        </div>
+        <div class="secondary-controls d-flex align-items-center gap-2">
+          <span class="text-muted small d-none d-md-inline">{{ page.total }} projeto(s)</span>
+          <div class="pf-view-switch" role="group" aria-label="Visualização"><button type="button" data-view="cards" title="Cards"><i class="ti ti-layout-grid"></i></button><button type="button" data-view="table" title="Tabela"><i class="ti ti-table"></i></button><button type="button" data-view="kanban" title="Kanban por estado (arraste para mudar o estado)"><i class="ti ti-layout-columns"></i></button></div>
+        </div>
+      </div>
+    </div>
   </section>
-
-  <div class="pf-resultbar"><span><strong id="pf-visible-count">{{ projects|length }}</strong> projeto(s)</span><span id="pf-active-filter-label">Portfólio completo</span></div>
 
   {% if projects is empty %}
-    <div class="pf-empty"><i class="ti ti-folder-off"></i><h3>Nenhum projeto disponível</h3><p>Não há projetos visíveis para seu perfil e entidades ativas.</p></div>
+    <div class="pf-empty"><i class="ti ti-{{ archived_mode ? 'archive-off' : 'folder-off' }}"></i><h3>{{ archived_mode ? 'Nenhum projeto arquivado' : 'Nenhum projeto encontrado' }}</h3><p>{% if page.has_criteria or page.quick != 'all' %}Nenhum projeto bate com a pesquisa. Ajuste os critérios ou limpe a pesquisa.{% elseif archived_mode %}Para arquivar, abra o projeto e use o botão Arquivar.{% else %}Não há projetos visíveis para seu perfil e entidades ativas.{% endif %}</p></div>
   {% else %}
     <section class="pf-project-grid" id="pf-project-grid">
       {% for project in projects %}
         <article class="pf-project-card" data-project-id="{{ project.id }}" data-state="{{ project.state.id }}" data-health="{{ project.health_effective }}" data-finished="{{ project.is_finished ? '1' : '0' }}" data-overdue="{{ project.is_overdue ? '1' : '0' }}" data-favorite="{{ project.is_favorite ? '1' : '0' }}" data-portfolio="{{ project.portfolio|lower }}" data-search="{{ (project.name ~ ' ' ~ project.code ~ ' ' ~ project.manager_name ~ ' ' ~ project.group_name ~ ' ' ~ project.entity_name ~ ' ' ~ project.portfolio ~ ' ' ~ project.sponsor)|lower }}">
           <div class="pf-project-card-head">
             <div class="pf-code-wrap"><span class="pf-project-code">{{ project.code ?: 'PROJ-' ~ project.id }}</span><span class="pf-health pf-health-{{ project.health_effective }}" title="Saúde do projeto"><i></i>{{ project.health_effective == 'good' ? 'Saudável' : (project.health_effective == 'attention' ? 'Atenção' : 'Crítico') }}</span></div>
-            <button type="button" class="pf-favorite {{ project.is_favorite ? 'is-active' : '' }}" data-project-id="{{ project.id }}" aria-label="Favoritar"><i class="ti ti-star{{ project.is_favorite ? '-filled' : '' }}"></i></button>
+            {% if archived_mode %}{% if project.can_update %}<button type="button" class="btn btn-sm btn-outline-secondary pf-unarchive" data-pf-archive="unarchive" data-project-id="{{ project.id }}" data-name="{{ project.name|e('html_attr') }}" title="Trazer de volta para o portfólio"><i class="ti ti-archive-off"></i> Desarquivar</button>{% endif %}{% else %}<button type="button" class="pf-favorite {{ project.is_favorite ? 'is-active' : '' }}" data-project-id="{{ project.id }}" aria-label="Favoritar"><i class="ti ti-star{{ project.is_favorite ? '-filled' : '' }}"></i></button>{% endif %}
           </div>
+          {% if archived_mode and project.archived %}<div class="pf-archived-note"><i class="ti ti-archive"></i>Arquivado em {{ project.archived.date|date('d/m/Y H:i') }}{% if project.archived.user_name %} por {{ project.archived.user_name }}{% endif %}</div>{% endif %}
           <a class="pf-card-main-link" href="{{ project.plugin_url }}">
             <div class="pf-title-line"><h3>{{ project.name }}</h3><span class="pf-state-badge" style="--pf-state-color:{{ project.state.color }}"><i></i>{{ project.state.name }}</span>{% if project.is_paused %}<span class="pf-paused-badge" title="Projeto pausado: sem notificações"><i class="ti ti-player-pause"></i></span>{% endif %}</div>
             <p class="pf-project-desc">{{ project.objective ?: (project.content ?: 'Sem objetivo ou descrição cadastrada.') }}</p>
@@ -104,10 +138,11 @@
         </div>
       {% endfor %}
     </section>
+    {% if page.total %}<div class="card pf-search-footer"><div class="card-footer search-footer">{{ page.pager_html|raw }}</div></div>{% endif %}
   {% endif %}
 
   {% if can_create_project %}
-  <div class="modal fade" id="pf-project-create-modal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content pf-modal-content">
+  <div class="modal fade" id="pf-project-create-modal" data-bs-focus="false" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content pf-modal-content">
     <form id="pf-project-create-form">
       <div class="modal-header"><div><div class="pf-eyebrow">NOVO PROJETO</div><h2 class="modal-title fs-4">Criar projeto</h2><p class="mb-0 text-muted">Crie do zero ou clone um template nativo do GLPI.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body"><input type="hidden" name="action" value="create"><input type="hidden" name="_glpi_csrf_token" value="{{ csrf_token }}">
@@ -116,7 +151,7 @@
         <div class="pf-form-section" data-pf-form-pane="ident"><p class="pf-pane-lead">Nome, template de origem e contexto do projeto.</p><div class="row g-3">
           <div class="col-lg-8"><label class="form-label">Nome *</label><input name="name" class="form-control" maxlength="255" required placeholder="Ex.: Implantação GLPI - Cliente XYZ"></div>
           <div class="col-lg-4"><label class="form-label">Código</label><input name="code" class="form-control" maxlength="255" placeholder="PRJ-001"></div>
-          <div class="col-lg-4"><label class="form-label">Template</label><select name="template_id" class="form-select"><option value="0">Projeto em branco</option>{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select></div>
+          <div class="col-lg-4"><label class="form-label">Template</label><select name="template_id" class="form-select" data-pf-searchable="Pesquisar template pelo nome"><option value="0">Projeto em branco</option>{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select></div>
           <div class="col-lg-4"><label class="form-label">Entidade</label><select name="entities_id" class="form-select">{% for entity in entities %}<option value="{{ entity.id }}">{{ entity.name }}</option>{% endfor %}</select></div>
           <div class="col-lg-4"><label class="form-label">Tipo</label><select name="projecttypes_id" class="form-select"><option value="0">Não definido</option>{% for type in project_types %}<option value="{{ type.id }}">{{ type.name }}</option>{% endfor %}</select></div>
           <div class="col-12"><label class="form-label">Objetivo / descrição executiva</label><textarea name="objective" class="form-control" rows="2" maxlength="4000" placeholder="O que este projeto pretende entregar e qual resultado é esperado?"></textarea></div>
@@ -126,7 +161,7 @@
           <div class="col-md-3"><label class="form-label">Estado</label><select name="projectstates_id" class="form-select">{% for state in states %}<option value="{{ state.id }}" {{ state.id == default_project_state_id ? 'selected' : '' }}>{{ state.name }}</option>{% endfor %}</select></div>
           <div class="col-md-3"><label class="form-label">Prioridade</label><select name="priority" class="form-select">{% for priority in priorities %}<option value="{{ priority.id }}" {{ priority.id == 3 ? 'selected' : '' }}>{{ priority.name }}</option>{% endfor %}</select></div>
           <div class="col-md-3"><label class="form-label">Execução</label><select name="execution_mode" class="form-select"><option value="direct" {{ default_execution_mode == 'direct' ? 'selected' : '' }}>Tarefa direta</option><option value="ticket" {{ default_execution_mode == 'ticket' ? 'selected' : '' }}>Tarefa + chamado</option></select></div>
-          <div class="col-md-3"><label class="form-label">Responsável</label><select name="users_id" class="form-select"><option value="0">Não definido</option>{% for user in users %}<option value="{{ user.id }}">{{ user.name }}</option>{% endfor %}</select></div>
+          <div class="col-md-3"><label class="form-label">Responsável</label>{{ manager_dropdown|raw }}</div>
           <div class="col-md-3"><label class="form-label">Grupo responsável</label><select name="groups_id" class="form-select"><option value="0">Não definido</option>{% for group in groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></div>
           <div class="col-md-3"><label class="form-label">Início planejado</label><input type="datetime-local" name="plan_start_date" class="form-control"></div>
           <div class="col-md-3"><label class="form-label">Prazo</label><input type="datetime-local" name="plan_end_date" class="form-control"></div>
